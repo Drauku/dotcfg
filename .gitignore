@@ -1,0 +1,13 @@
+# Ignore local secrets and sensitive files
+.bash_secrets
+.env
+*.key
+*.token
+
+# Ignore stow backup/ignore files
+.stow-local-ignore
+*~
+*.swp
+
+# Ignore the setup script's temporary artifacts
+*.log

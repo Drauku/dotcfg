@@ -1,13 +1,17 @@
 #!/bin/bash
 # --- nobara/.bash_nobara ---
 
-# Hardware Monitoring
-alias gpu-main='rocm-smi --device 0' # Radeon 9070
-alias gpu-pass='rocm-smi --device 1' # Radeon 7600
+# CPU monitoring
 alias cpu-stat='watch -n 1 "grep \"^[c]pu MHz\" /proc/cpuinfo"'
 
+# GPU monitoring
+alias gpu-main='rocm-smi --device 0' # Radeon 9070
+alias gpu-pass='rocm-smi --device 1' # Radeon 7600
+alias gpu-load='watch -n 1 cat /sys/class/drm/card0/device/gpu_busy_percent'
+
 # Gaming & Performance
-alias update='sudo dnf update'
+alias update='sudo dnf update -y'
+alias upgrade='sudo dnf upgrade --refresh'
 alias n-sync='nobara-sync'
 alias vfio-check='dmesg | grep -i vfio'
 

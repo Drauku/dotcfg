@@ -4,4 +4,8 @@
 # Standard Debian/Ubuntu maintenance
 alias update='sudo apt update -y && sudo apt dist-upgrade -y'
 
-# Distro-Specific
+# Suppress annoying "Restart service" prompts during apt updates
+if [ -f /etc/debian_version ]; then
+    export DEBIAN_FRONTEND=noninteractive
+    alias apt-clean='sudo apt autoremove -y && sudo apt autoclean'
+fi

@@ -123,7 +123,7 @@ if [ -d "$os_id" ]; then selected_pkgs+=("$os_id"); fi
 echo -e "${blu}${bld}--- Optional package selection ---${rst}"
 for pkg in "${optional_pkgs[@]}"; do
     [ ! -d "$pkg" ] && continue
-    read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw}? (y/N): ${rst}" -n 1 -r; echo
+    read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw}? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
     case "$REPLY" in
         [Yy]*)
             if [[ "$pkg" == "docker" && -d "$HOME/git/container-stack-manager" ]]; then
@@ -141,7 +141,7 @@ echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
 echo -e "${ylw}The following packages will be Stow(ed)${rst}:"
 echo -e " - ${grn}$(echo -e "${selected_pkgs[@]}" | sed 's/ /, /g')${rst}"
 # echo -e "  - ${grn}$(IFS=', '; echo "${selected_pkgs[*]}")${rst}"
-read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r; echo
+read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${red}Deployment aborted.${rst}"
     exit 0
@@ -158,7 +158,7 @@ echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}"
 
 # --- Final cleanup (self-destruct) ---
 if [[ "$this_script" != "$repo_script" ]] && [ -d "$repo_dir" ]; then
-    read -p "\n${ylw}Clean up temporary setup script? (y/N): ${rst}" -n 1 -r; echo
+    read -p "\n${ylw}Clean up temporary setup script? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -- "$0" && echo -e "\n${grn}Temporary script ${red}removed${rst}."
     else

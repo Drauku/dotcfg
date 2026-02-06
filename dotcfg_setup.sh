@@ -4,7 +4,9 @@
 # --- Variable Definitions ---
 repo_url="https://github.com/Drauku/dotcfg.git"
 repo_dir="$HOME/dotcfg"
-backup_dir="$HOME/.dotfiles_backup/$(date +%Y%m%d_%H%M%S)"
+repo_script="$repo_dir/dotcfg_setup.sh"
+this_script="$(realpath "$0")"
+backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"
 standard_pkgs=("common")
 optional_pkgs=("docker" "server" "gaming")
 
@@ -20,7 +22,7 @@ fi
 [ -f /etc/os-release ] && os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
 
 # Script Header
-echo "${blu}${bld}>> Launching modular dotfile setup using Stow...${rst}"
+echo -e "\n${blu}${bld}>>> Launching modular dotfile setup using Stow >>>${rst}\n"
 
 # Dependency Check (Multi-Distro)
 if command -v dnf >/dev/null 2>&1; then
@@ -40,13 +42,30 @@ done
 
 # Repo Management
 if [ ! -d "$repo_dir" ]; then
-    echo "${grn}Cloning repository to $repo_dir...${rst}"
+    echo "${ylw}"
     git clone "$repo_url" "$repo_dir"
+    echo "${rst}"
 else
     echo "${blu}Updating repository...${rst}"
     cd "$repo_dir" && git pull
 fi
 cd "$repo_dir" || exit 1
+
+# Install Git Runner (Post-Merge Hook installed on each host)
+hook_file="$repo_dir/.git/hooks/post-merge"
+if [ -d ".git" ] && [ ! -f "$hook_file" ]; then
+    echo "${blu}Installing Git post-merge runner...${rst}"
+    cat << 'EOF' > "$hook_file"
+#!/bin/bash
+# Automatically runs setup after a successful git pull
+setup_script="$HOME/dotcfg/dotcfg_setup.sh"
+if [ -f "$setup_script" ]; then
+    echo ">> Git merge detected. Running dotcfg_setup.sh..."
+    bash "$setup_script"
+fi
+EOF
+    chmod +x "$hook_file"
+fi
 
 # Initialize Secrets (Local Only)
 if [ ! -f "$HOME/.bash_secrets" ]; then
@@ -71,7 +90,7 @@ safe_stow() {
             target="$HOME/$item"
             # If target exists and is NOT a symlink, back it up
             if [ -e "$target" ] && [ ! -L "$target" ]; then
-                echo "${mgn}Backing up $target to $backup_dir${rst}"
+                # echo "${mgn}Backing up $target to $backup_dir${rst}"
                 mkdir -p "$backup_dir"
                 mv "$target" "$backup_dir/"
             fi
@@ -80,8 +99,6 @@ safe_stow() {
     # Stow indicated package
     stow -v -R "$package"
 }
-# Initialize Core Plan
-[ -f /etc/os-release ] && os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
 
 # Set selected packages:
 selected_pkgs=("${standard_pkgs[@]}")
@@ -90,7 +107,7 @@ selected_pkgs=("${standard_pkgs[@]}")
 if [ -d "$os_id" ]; then selected_pkgs+=("$os_id"); fi
 
 # Package selection
-echo "${mgn}${bld}Optional packages:${rst}"
+echo "${blu}${bld}--- Optional packages ---${rst}"
 
 # Optional packages
 for pkg in "${optional_pkgs[@]}"; do
@@ -106,10 +123,10 @@ for pkg in "${optional_pkgs[@]}"; do
     fi
 done
 
-# Final Confirmation
+# Deployment confirmation
 echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
 echo "${ylw}The following packages will be Stow(ed)${rst}:"
-echo "  - ${grn}${selected_pkgs[*]}${rst}"
+echo "  - ${grn}$(echo "${selected_pkgs[@]}" | sed 's/ /, /g')${rst}"
 read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r; echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "${red}Deployment aborted.${rst}"
@@ -120,18 +137,17 @@ for pkg in "${selected_pkgs[@]}"; do
     safe_stow "$pkg"
 done
 
-echo "${grn}${bld}Deployment Complete!${rst}"
-[ -d "$backup_dir" ] && echo "Backups saved to: ${ylw}$backup_dir${rst}"
-echo "To finish: ${ylw}source ~/.bashrc${rst}"
+[ -d "$backup_dir" ] && echo "Backups saved to: ${mgn}$backup_dir${rst}"
 
-# --- Final Cleanup (Self-Destruct) ---
-if [[ "$(realpath "$0")" != "$repo_dir/setup.sh" ]] && [ -d "$repo_dir" ]; then
-    echo # Move to a new line after the previous output
-    read -p "${ylw}Clean up temporary setup script? (y/n): ${rst}" -n 1 -r
-    echo # Move to a new line after the keypress
+echo "To finish: ${ylw}source ~/.bashrc${rst}"
+echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}"
+
+# --- Final cleanup (self-destruct) ---
+if [[ "$this_script" != "$repo_script" ]] && [ -d "$repo_dir" ]; then
+    read -p "\n${ylw}Clean up temporary setup script? (y/N): ${rst}\n" -n 1 -r
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -- "$0" && echo "${grn}Temporary script ${red}removed${rst}."
+        rm -- "$0" && echo -e "\n${grn}Temporary script ${red}removed${rst}."
     else
-        echo "${mgn}Skipping cleanup. Script preserved at: ${cyn}$(realpath "$0")${rst}"
+        echo -e "\n${mgn}Skipping cleanup. Script preserved at: ${cyn}$(realpath "$0")${rst}"
     fi
 fi

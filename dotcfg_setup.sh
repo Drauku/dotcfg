@@ -19,7 +19,13 @@ else
 fi
 
 # Identify OS for recommendation
-[ -f /etc/os-release ] && os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
+if [ -f /etc/os-release ]; then
+    os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
+    # Supplemental check for Proxmox
+    if [ -f /usr/bin/pveversion ]; then
+        os_id="proxmox"
+    fi
+fi
 
 # Script Header
 echo -e "\n${blu}${bld}>>> Launching modular dotfile setup using Stow >>>${rst}\n"

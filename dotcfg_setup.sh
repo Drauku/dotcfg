@@ -139,7 +139,8 @@ done
 # Deployment confirmation
 echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
 echo -e "${ylw}The following packages will be Stow(ed)${rst}:"
-echo -e "  - ${grn}$(IFS=', '; echo "${selected_pkgs[*]}")${rst}"
+echo -e " - ${grn}$(echo -e "${selected_pkgs[@]}" | sed 's/ /, /g')${rst}"
+# echo -e "  - ${grn}$(IFS=', '; echo "${selected_pkgs[*]}")${rst}"
 read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r; echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${red}Deployment aborted.${rst}"

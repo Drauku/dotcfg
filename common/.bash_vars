@@ -1,4 +1,4 @@
 #!/bin/bash
 
-export dk_uid="$(id -u docker)"
-export dk_gid="$(id -g docker)"
+export dk_uid="$(id -u docker)" > /dev/null
+export dk_gid="$(id -g docker)" > /dev/null

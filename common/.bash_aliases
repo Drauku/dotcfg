@@ -48,6 +48,7 @@ alias lan='ip -c -br a'
 alias cls='clear'
 
 # --- Functions ---
+# Creates directory and enters it
 md() {
     if [ -n "$1" ]; then
         mkdir -p "$1" && cd "$1"
@@ -55,3 +56,6 @@ md() {
         echo "Usage: md <directory>"
     fi
 }
+
+# --- Git ---
+alias gitlog='git log --graph --pretty=format:"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset" --abbrev-commit'

@@ -1,0 +1,62 @@
+#!/bin/bash
+# --- debian/.bash_debian ---
+
+# Standard Debian/Ubuntu maintenance
+alias update='sudo apt update -y && sudo apt dist-upgrade -y'
+
+# Check if Container Stack Manager (CSM) is already handled
+csm_dir="$HOME/git/container-stack-manager"
+stacks_dir='/srv/stacks'
+
+# Docker shortcuts
+alias stacks='cd $stacks_dir'
+
+vpncheck(){ echo "     Host IP: $(wget -qO- ifconfig.me)" && echo "Container IP: $(docker container exec -it "${*}" wget -qO- ipinfo.io/ip)"; }
+ipcheck(){ echo "Container IP: $(docker container exec -it "${*}" wget -qO- ipinfo.io)"; }
+
+# Only load these if CSM isn't present
+if [ ! -d "$csm_dir" ] && ! command -v csm >/dev/null 2>&1; then
+
+    dcu() { sudo docker compose -f "$stacks_dir/$1/compose.yml" up -d --remove-orphans; }
+    dcd() { sudo docker compose -f "$stacks_dir/$1/compose.yml" down; }
+    dcb() { dcd "$1" && dcu "$1"; }
+    dcl() { sudo docker compose -f "$stacks_dir/$1/compose.yml" logs -f --tail=50; }
+
+    dcn() {
+        local target="$stacks_dir/$1"
+        mkdir -p "$target" && touch "$target/compose.yml" "$target/.env"
+        echo "${grn}Created stack structure in ${ylw}$target${rst}"
+    }
+
+    dlc() { sudo docker container list --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}"; }
+    dks() { cd "$stacks_dir/$1" || echo "${red}Error: Stack not found${rst}"; }
+
+    echo "${blu}Loaded legacy Docker aliases (CSM not detected).${rst}"
+
+    # appdata(){ cd /share/docker/appdata/${1} || return; }
+    # compose(){ cd /share/docker/compose/${1} || return; }
+
+    # docker_list_containers(){ docker container list --format "table {{.ID}}  {{.Names}}\t{{.Status}}\t{{.RunningFor}}\t{{.Image}}"; }
+    # alias dlc="docker_list_containers"
+
+    # docker_compose_folders(){
+    #     install -o $var_uid -g $var_gid -m 774 -d /share/docker/{appdata,compose}/${1}
+    #     install -o $var_uid -g $var_gid -m 660 /dev/null /share/docker/compose/${1}/compose.yml
+    #     # install -o 1000 -g 1000 -m 774 /dev/null /opt/docker/compose/$1/.env
+    #     ln -sf /share/docker/compose/${1}/.env /share/docker/.docker.env
+    #     }
+    # alias dcf='docker_compose_folders'
+
+    # docker_compose_up(){ docker-compose -f /share/docker/compose/${1}/compose.yml up -d --remove-orphans; }
+    # alias dcu="docker_compose_up"
+
+    # docker_compose_down(){ docker-compose -f /share/docker/compose/${1}/compose.yml down; }
+    # alias dcd="docker_compose_down"
+
+    # docker_compose_logs(){ docker-compose -f /share/docker/compose/${1}/compose.yml logs -f --tail=50; }
+    # alias dcl="docker_compose_logs"
+
+else
+    # Optional: Alias to jump to the CSM directory for development
+    alias csm-cd="cd $csm_dir"
+fi

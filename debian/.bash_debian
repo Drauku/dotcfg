@@ -1,0 +1,7 @@
+#!/bin/bash
+# --- debian/.bash_debian ---
+
+# Standard Debian/Ubuntu maintenance
+alias update='sudo apt update -y && sudo apt dist-upgrade -y'
+
+# Distro-Specific

@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# Standard Ubuntu update alias
+alias update='sudo apt update -y && sudo apt dist-upgrade -y'

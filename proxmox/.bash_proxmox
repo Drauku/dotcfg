@@ -1,0 +1,10 @@
+#!/bin/bash
+# --- proxmox/.bash_proxmox ---
+
+# PVE specific shortcuts
+alias pvm='qm'           # Proxmox VM Manager
+alias pct='pct'          # Proxmox Container Toolkit (already short, but good for parity)
+alias ping='ping -c 3'   # Overrides the common ping -c 5
+
+# Quick status check for the local PVE node
+alias pve-stat='pvesh get /nodes/$(hostname)/status'

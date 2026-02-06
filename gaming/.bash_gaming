@@ -1,0 +1,30 @@
+#!/bin/bash
+# --- gaming/.bash_gaming ---
+
+# Hardware Monitoring (Universal for your Radeon/Ryzen setup)
+if command -v rocm-smi >/dev/null 2>&1; then
+    alias gpu-main='rocm-smi --device 0' # Radeon 9070
+    alias gpu-pass='rocm-smi --device 1' # Radeon 7600
+fi
+
+# Performance Monitoring
+alias fps-test='mangohud glxgears'
+
+# Distro-Specific Gaming/Update Logic
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    case "$ID" in
+        nobara|fedora)
+            alias update-game='sudo dnf update -y && nobara-sync'
+            ;;
+        debian|ubuntu)
+            alias update-game='sudo apt update -y && sudo apt dist-upgrade'
+            ;;
+        arch)
+            alias update-game='yay -Syu'
+            ;;
+    esac
+fi
+
+# VM Passthrough help
+alias vfio-check='dmesg | grep -i vfio'

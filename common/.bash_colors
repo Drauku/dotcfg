@@ -1,0 +1,37 @@
+#!/bin/sh
+
+# Check if stdout is a terminal AND if it supports colors
+if [ -t 1 ] && command -v tput >/dev/null && [ "$(tput colors)" -ge 8 ]; then
+
+    # colors for prompt
+    red="$(printf '\033[38;2;255;000;000m')"; export red
+    orn="$(printf '\033[38;2;255;075;075m')"; export orn
+    ylw="$(printf '\033[38;2;255;255;000m')"; export ylw
+    grn="$(printf '\033[38;2;000;170;000m')"; export grn
+    cyn="$(printf '\033[38;2;085;255;255m')"; export cyn
+    blu="$(printf '\033[38;2;000;120;255m')"; export blu
+    prp="$(printf '\033[38;2;085;085;255m')"; export prp
+    mgn="$(printf '\033[38;2;255;085;255m')"; export mgn
+    wht="$(printf '\033[38;2;255;255;255m')"; export wht
+    blk="$(printf '\033[38;2;025;025;025m')"; export blk
+    rst="$(printf '\033[m')"; export rst
+    # echo " $red red $orn orn $ylw ylw $grn grn $cyn cyn $blu blu $prp prp $mgn mgn $wht wht $blk blk $rst rst"
+
+    red=$(tput setaf 1)
+    grn=$(tput setaf 2)
+    ylw=$(tput setaf 3)
+    blu=$(tput setaf 4)
+    mgn=$(tput setaf 5)
+    cyn=$(tput setaf 6)
+    bld=$(tput bold)
+    itx=$(tput sitm)
+    uln=$(tput smul)
+    rst=$(tput sgr0)
+else
+    # Fallback to empty strings if no color support
+    red=""; grn=""; ylw=""; blu=""; mgn=""; cyn=""; bld=""; itx=""; uln=""; rst=""
+fi
+
+# Usage
+# echo "${red}Error:${rst} Something went wrong."
+# echo "${bld}${grn}Success!${rst}"

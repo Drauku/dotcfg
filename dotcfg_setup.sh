@@ -126,10 +126,10 @@ selected_pkgs=("${standard_pkgs[@]}")
 if [ -d "$os_id" ]; then selected_pkgs+=("$os_id"); fi
 
 # Package selection
-echo -e "${blu}${bld}--- Optional package selection ---${rst}"
+[[ -z "$optional_pkgs" ]] && echo -e "${blu}${bld}--- Optional package selection ---${rst}\n"
 for pkg in "${optional_pkgs[@]}"; do
     [ ! -d "$pkg" ] && continue
-    read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw}? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
+    read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw} configs? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
     case "$REPLY" in
         [Yy]*)
             if [[ "$pkg" == "docker" && -d "$HOME/git/container-stack-manager" ]]; then
@@ -159,15 +159,15 @@ done
 
 [ -d "$backup_dir" ] && echo -e "Backups saved to: ${mgn}$backup_dir${rst}"
 
-echo -e "To finish: ${ylw}source ~/.bashrc${rst}"
-echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}"
+echo -e "\nTo finish: ${ylw}source ~/.bashrc${rst}"
+echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}\n"
 
 # --- Final cleanup (self-destruct) ---
 if [[ "$this_script" != "$repo_script" ]] && [ -d "$repo_dir" ]; then
-    read -p "\n${ylw}Clean up temporary setup script? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
+    read -p "${ylw}Clean up temporary setup script? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -- "$0" && echo -e "\n${grn}Temporary script ${red}removed${rst}."
+        rm -- "$0" && echo -e "${grn}Temporary script ${red}removed${rst}.\n"
     else
-        echo -e "\n${mgn}Skipping cleanup. Script preserved at: ${cyn}$(realpath "$0")${rst}"
+        echo -e "${mgn}Skipping cleanup. Script preserved at: ${cyn}$(realpath "$0")${rst}\n"
     fi
 fi

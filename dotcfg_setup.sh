@@ -24,13 +24,26 @@ fi
 # Script Header
 echo -e "\n${blu}${bld}>>> Launching modular dotfile setup using Stow >>>${rst}\n"
 
+# Determine root command prefix
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        root_cmd="sudo"
+    else
+        echo -e "${red}Error: This script requires root privileges, but sudo is not installed.${rst}"
+        echo -e "${ylw}Please run as root or install sudo.${rst}"
+        exit 1
+    fi
+else
+    root_cmd=""
+fi
+
 # Dependency Check (Multi-Distro)
 if command -v dnf >/dev/null 2>&1; then
-    pkg_mgr="sudo dnf install -y"
+    pkg_mgr="$root_cmd dnf install -y"
 elif command -v apt-get >/dev/null 2>&1; then
-    pkg_mgr="sudo apt-get update && sudo apt-get install -y"
+    pkg_mgr="$root_cmd apt-get update && $root_cmd apt-get install -y"
 elif command -v pacman >/dev/null 2>&1; then
-    pkg_mgr="sudo pacman -S --noconfirm"
+    pkg_mgr="$root_cmd pacman -S --noconfirm"
 fi
 
 for pkg in git stow; do

@@ -31,7 +31,7 @@ if [ ! -d "$csm_dir" ] && ! command -v csm >/dev/null 2>&1; then
     dlc() { sudo docker container list --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}"; }
     dks() { cd "$stacks_dir/$1" || echo "${red}Error: Stack not found${rst}"; }
 
-    echo "${blu}Loaded legacy Docker aliases (CSM not detected).${rst}"
+    # echo "${blu}Loaded legacy Docker aliases (CSM not detected).${rst}"
 
     # appdata(){ cd /share/docker/appdata/${1} || return; }
     # compose(){ cd /share/docker/compose/${1} || return; }

@@ -1,36 +1,36 @@
 #!/bin/sh
+# --- .bash_colors ---
 
-# Check if stdout is a terminal AND if it supports colors
-if [ -t 1 ] && command -v tput >/dev/null && [ "$(tput colors)" -ge 8 ]; then
+if [ -t 1 ] && command -v tput >/dev/null; then
+    # Base attributes
+    bld=$(tput bold); itx=$(tput sitm); uln=$(tput smul); rst=$(tput sgr0)
 
-    # colors for prompt
-    red="$(printf '\033[38;2;255;000;000m')"; export red
-    orn="$(printf '\033[38;2;255;075;075m')"; export orn
-    ylw="$(printf '\033[38;2;255;255;000m')"; export ylw
-    grn="$(printf '\033[38;2;000;170;000m')"; export grn
-    cyn="$(printf '\033[38;2;085;255;255m')"; export cyn
-    blu="$(printf '\033[38;2;000;120;255m')"; export blu
-    prp="$(printf '\033[38;2;085;085;255m')"; export prp
-    mgn="$(printf '\033[38;2;255;085;255m')"; export mgn
-    wht="$(printf '\033[38;2;255;255;255m')"; export wht
-    blk="$(printf '\033[38;2;025;025;025m')"; export blk
-    rst="$(printf '\033[m')"; export rst
-    # echo " $red red $orn orn $ylw ylw $grn grn $cyn cyn $blu blu $prp prp $mgn mgn $wht wht $blk blk $rst rst"
+    # Check for 24-bit (TrueColor) support (standard in modern KDE/Nobara)
+    if [[ "$COLORTERM" == "truecolor" || "$COLORTERM" == "24bit" ]]; then
+        red="$(printf '\033[38;2;255;000;000m')"
+        orn="$(printf '\033[38;2;255;075;075m')"
+        ylw="$(printf '\033[38;2;255;255;000m')"
+        grn="$(printf '\033[38;2;000;170;000m')"
+        cyn="$(printf '\033[38;2;085;255;255m')"
+        blu="$(printf '\033[38;2;000;120;255m')"
+        prp="$(printf '\033[38;2;085;085;255m')"
+        mgn="$(printf '\033[38;2;255;085;255m')"
+        wht="$(printf '\033[38;2;255;255;255m')"
+        blk="$(printf '\033[38;2;025;025;025m')"
+    else
+        # Fallback to standard 8/16 colors for SSH/TTY
+        red=$(tput setaf 1); grn=$(tput setaf 2); ylw=$(tput setaf 3)
+        blu=$(tput setaf 4); mgn=$(tput setaf 5); cyn=$(tput setaf 6)
+        orn=$(tput setaf 3); wht=$(tput setaf 7); blk=$(tput setaf 0)
+    fi
 
-    red=$(tput setaf 1)
-    grn=$(tput setaf 2)
-    ylw=$(tput setaf 3)
-    blu=$(tput setaf 4)
-    mgn=$(tput setaf 5)
-    cyn=$(tput setaf 6)
-    bld=$(tput bold)
-    itx=$(tput sitm)
-    uln=$(tput smul)
-    rst=$(tput sgr0)
+    # Export all variables for sub-shells (like your setup script)
+    export red orn ylw grn cyn blu prp mgn wht blk bld itx uln rst
 else
-    # Fallback to empty strings if no color support
-    red=""; grn=""; ylw=""; blu=""; mgn=""; cyn=""; bld=""; itx=""; uln=""; rst=""
+    # Null out if no terminal support
+    export red="" orn="" ylw="" grn="" cyn="" blu="" prp="" mgn="" wht="" blk="" bld="" itx="" uln="" rst=""
 fi
+# echo " $red red $orn orn $ylw ylw $grn grn $cyn cyn $blu blu $prp prp $mgn mgn $wht wht $blk blk $rst rst"
 
 # Usage
 # echo "${red}Error:${rst} Something went wrong."

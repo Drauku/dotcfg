@@ -1,21 +1,26 @@
 #!/bin/bash
+# --- setup.sh ---
 
-# --- 1. Color Configuration ---
-if [ -t 1 ] && command -v tput >/dev/null; then
-    red=$(tput setaf 1); grn=$(tput setaf 2); ylw=$(tput setaf 3)
-    blu=$(tput setaf 4); mgn=$(tput setaf 5); bld=$(tput bold); rst=$(tput sgr0)
-else
-    red=""; grn=""; ylw=""; blu=""; mgn=""; bld=""; rst=""
-fi
-
-# --- 2. Variable Definitions ---
+# --- Variable Definitions ---
 repo_url="https://github.com/Drauku/dotcfg.git"
 repo_dir="$HOME/dotcfg"
 backup_dir="$HOME/.dotfiles_backup/$(date +%Y%m%d_%H%M%S)"
 
-echo "${blu}${bld}>> Launching Distro-Specific Bootstrap...${rst}"
+if [ -t 1 ] && command -v tput >/dev/null; then
+    red=$(tput setaf 1); grn=$(tput setaf 2); ylw=$(tput setaf 3)
+    blu=$(tput setaf 4); mgn=$(tput setaf 5); cyn=$(tput setaf 6)
+    bld=$(tput bold); itx=$(tput sitm); uln=$(tput smul); rst=$(tput sgr0)
+else
+    red=""; grn=""; ylw=""; blu=""; mgn=""; bld=""; itx=""; uln=""; rst=""
+fi
 
-# --- 3. Dependency Installation ---
+# Identify OS for recommendation
+[ -f /etc/os-release ] && os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
+
+# Script Header
+echo "${blu}${bld}>> Launching modular dotfile setup using Stow...${rst}"
+
+# Dependency Check (Multi-Distro)
 if command -v dnf >/dev/null 2>&1; then
     pkg_mgr="sudo dnf install -y"
 elif command -v apt-get >/dev/null 2>&1; then
@@ -31,7 +36,7 @@ for pkg in git stow; do
     fi
 done
 
-# --- 4. Repository Management ---
+# Repo Management
 if [ ! -d "$repo_dir" ]; then
     echo "${grn}Cloning repository to $repo_dir...${rst}"
     git clone "$repo_url" "$repo_dir"
@@ -39,53 +44,58 @@ else
     echo "${blu}Updating repository...${rst}"
     cd "$repo_dir" && git pull
 fi
-
 cd "$repo_dir" || exit 1
 
-# --- 5. Secrets Initialization ---
+# Initialize Secrets (Local Only)
 if [ ! -f "$HOME/.bash_secrets" ]; then
-    touch "$HOME/.bash_secrets"
+    echo "${ylw}Initializing .bash_secrets...${rst}"
     echo "# Private environment variables" > "$HOME/.bash_secrets"
 fi
 
-# --- 6. Improved Backup & Stow Function ---
+# Smart Backup & Stow Function
 safe_stow() {
     local package=$1
-    [ ! -d "$package" ] && return # Skip if folder doesn't exist
-
-    echo "${ylw}Stowing $package...${rst}"
+    # Skip if folder doesn't exist
+    [ ! -d "$package" ] && return
+    # Backup existing files
+    echo "${blu}Stowing ${cyn}$package${rst}..."
     (
         cd "$package" || exit
         find . -maxdepth 1 -type f -name ".*" | while read -r file; do
             target="$HOME/${file#./}"
             if [ -f "$target" ] && [ ! -L "$target" ]; then
-                echo "${mgn}Backing up $target to $backup_dir${rst}"
                 mkdir -p "$backup_dir"
                 mv "$target" "$backup_dir/"
             fi
         done
     )
+    # Stow indicated package
     stow -v -R "$package"
 }
 
-# --- 7. Distro Logic ---
-# Always stow common
-safe_stow common
+# Dynamic Feature Selection
+# Build an array of available feature directories
+features=("common")
+for dir in */; do
+    feat=$(basename "$dir")
+    [[ "$feat" == "common" ]] && continue
+    features+=("$feat")
+done
 
-# Detect OS ID (e.g., nobara, debian, arch)
-if [ -f /etc/os-release ]; then
-    os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
-
-    # Check for specific folder in repo matching OS ID
-    if [ -d "$os_id" ]; then
-        echo "${grn}Detected $os_id environment.${rst}"
-        safe_stow "$os_id"
+echo "${mgn}${bld}Optional Features Detected:${rst}"
+for feature in "${features[@]}"; do
+    read -p "${ylw}Install config for [$feature]? (y/n): ${rst}" -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        # Check for specific CSM logic if feature is 'docker'
+        if [[ "$feature" == "docker" && -d "$HOME/git/container-stack-manager" ]]; then
+            echo "${red}CSM detected. Skipping legacy docker stow.${rst}"
+        else
+            safe_stow "$feature"
+        fi
     fi
-fi
+done
 
-# BSD Detection (Special Case)
-if [[ "$OSTYPE" == *"bsd"* ]]; then
-    safe_stow bsd
-fi
-
-echo "${grn}${bld}Success!${rst} Run: ${ylw}source ~/.bashrc${rst}"
+echo "${grn}${bld}Deployment Complete!${rst}"
+[ -d "$backup_dir" ] && echo "Backups saved to: ${ylw}$backup_dir${rst}"
+echo "To complete setup, run: ${ylw}source ~/.bashrc${rst}"

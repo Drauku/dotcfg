@@ -35,18 +35,18 @@ fi
 
 for pkg in git stow; do
     if ! command -v "$pkg" >/dev/null 2>&1; then
-        echo "${ylw}Installing $pkg...${rst}"
+        echo -e "${ylw}Installing $pkg...${rst}"
         eval "$pkg_mgr $pkg"
     fi
 done
 
 # Repo Management
 if [ ! -d "$repo_dir" ]; then
-    echo "${ylw}"
+    echo -e "${ylw}"
     git clone "$repo_url" "$repo_dir"
-    echo "${rst}"
+    echo -e "${rst}"
 else
-    echo "${blu}Updating repository...${rst}"
+    echo -e "${blu}Updating repository...${rst}"
     cd "$repo_dir" && git pull
 fi
 cd "$repo_dir" || exit 1
@@ -54,13 +54,13 @@ cd "$repo_dir" || exit 1
 # Install Git Runner (Post-Merge Hook installed on each host)
 hook_file="$repo_dir/.git/hooks/post-merge"
 if [ -d ".git" ] && [ ! -f "$hook_file" ]; then
-    echo "${blu}Installing Git post-merge runner...${rst}"
+    echo -e "${blu}Installing Git post-merge runner...${rst}"
     cat << 'EOF' > "$hook_file"
 #!/bin/bash
 # Automatically runs setup after a successful git pull
 setup_script="$HOME/dotcfg/dotcfg_setup.sh"
 if [ -f "$setup_script" ]; then
-    echo ">> Git merge detected. Running dotcfg_setup.sh..."
+    echo -e ">> Git merge detected. Running dotcfg_setup.sh..."
     bash "$setup_script"
 fi
 EOF
@@ -69,8 +69,8 @@ fi
 
 # Initialize Secrets (Local Only)
 if [ ! -f "$HOME/.bash_secrets" ]; then
-    echo "${ylw}Initializing .bash_secrets...${rst}"
-    echo "# Private environment variables" > "$HOME/.bash_secrets"
+    echo -e "${ylw}Initializing .bash_secrets...${rst}"
+    echo -e "# Private environment variables" > "$HOME/.bash_secrets"
 fi
 
 # Smart Backup & Stow Function
@@ -79,7 +79,7 @@ safe_stow() {
     # Skip if folder doesn't exist
     [ ! -d "$package" ] && return
 
-    echo "${blu}Stowing ${cyn}$package${rst}..."
+    echo -e "${blu}Stowing ${cyn}$package${rst}..."
     (
         cd "$package" || exit
         # Iterate over all items (including hidden ones)
@@ -90,7 +90,7 @@ safe_stow() {
             target="$HOME/$item"
             # If target exists and is NOT a symlink, back it up
             if [ -e "$target" ] && [ ! -L "$target" ]; then
-                # echo "${mgn}Backing up $target to $backup_dir${rst}"
+                # echo -e "${mgn}Backing up $target to $backup_dir${rst}"
                 mkdir -p "$backup_dir"
                 mv "$target" "$backup_dir/"
             fi
@@ -107,29 +107,29 @@ selected_pkgs=("${standard_pkgs[@]}")
 if [ -d "$os_id" ]; then selected_pkgs+=("$os_id"); fi
 
 # Package selection
-echo "${blu}${bld}--- Optional packages ---${rst}"
-
-# Optional packages
+echo -e "${blu}${bld}--- Optional package selection ---${rst}"
 for pkg in "${optional_pkgs[@]}"; do
-    [ ! -d "$pkg" ] && continue # Skip if folder isn't in repo
+    [ ! -d "$pkg" ] && continue
     read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw}? (y/N): ${rst}" -n 1 -r; echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        # Only check CSM for the docker package
-        if [[ "$pkg" == "docker" ]] && [ -d "$HOME/git/container-stack-manager" ]; then
-            echo "${red}>> CSM detected. Skipping legacy docker stow.${rst}"
-            continue
-        fi
-        selected_pkgs+=("$pkg")
-    fi
+    case "$REPLY" in
+        [Yy]*)
+            if [[ "$pkg" == "docker" && -d "$HOME/git/container-stack-manager" ]]; then
+                echo -e "${red}>> CSM detected. Skipping legacy docker stow.${rst}"
+            else
+                selected_pkgs+=("$pkg")
+            fi
+            ;;
+        *) continue ;;
+    esac
 done
 
 # Deployment confirmation
 echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
-echo "${ylw}The following packages will be Stow(ed)${rst}:"
-echo "  - ${grn}$(echo "${selected_pkgs[@]}" | sed 's/ /, /g')${rst}"
+echo -e "${ylw}The following packages will be Stow(ed)${rst}:"
+echo -e "  - ${grn}$(IFS=', '; echo "${selected_pkgs[*]}")${rst}"
 read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r; echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "${red}Deployment aborted.${rst}"
+    echo -e "${red}Deployment aborted.${rst}"
     exit 0
 fi
 
@@ -137,14 +137,14 @@ for pkg in "${selected_pkgs[@]}"; do
     safe_stow "$pkg"
 done
 
-[ -d "$backup_dir" ] && echo "Backups saved to: ${mgn}$backup_dir${rst}"
+[ -d "$backup_dir" ] && echo -e "Backups saved to: ${mgn}$backup_dir${rst}"
 
-echo "To finish: ${ylw}source ~/.bashrc${rst}"
+echo -e "To finish: ${ylw}source ~/.bashrc${rst}"
 echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}"
 
 # --- Final cleanup (self-destruct) ---
 if [[ "$this_script" != "$repo_script" ]] && [ -d "$repo_dir" ]; then
-    read -p "\n${ylw}Clean up temporary setup script? (y/N): ${rst}\n" -n 1 -r
+    read -p "\n${ylw}Clean up temporary setup script? (y/N): ${rst}" -n 1 -r; echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -- "$0" && echo -e "\n${grn}Temporary script ${red}removed${rst}."
     else

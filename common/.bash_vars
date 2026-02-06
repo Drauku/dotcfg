@@ -1,11 +1,2 @@
 #!/bin/bash
-
-# Check if docker user exists before exporting
-if getent passwd docker >/dev/null 2>&1; then
-    export dk_uid="$(id -u docker 2>/dev/null)"
-fi
-
-# Check if docker group exists before exporting
-if getent group docker >/dev/null 2>&1; then
-    export dk_gid="$(id -g docker 2>/dev/null)"
-fi
+# --- .bash_vars ---

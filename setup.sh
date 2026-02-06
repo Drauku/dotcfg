@@ -123,3 +123,15 @@ done
 echo "${grn}${bld}Deployment Complete!${rst}"
 [ -d "$backup_dir" ] && echo "Backups saved to: ${ylw}$backup_dir${rst}"
 echo "To finish: ${ylw}source ~/.bashrc${rst}"
+
+# --- Final Cleanup (Self-Destruct) ---
+if [[ "$(realpath "$0")" != "$repo_dir/setup.sh" ]] && [ -d "$repo_dir" ]; then
+    echo # Move to a new line after the previous output
+    read -p "${ylw}Clean up temporary setup script? (y/n): ${rst}" -n 1 -r
+    echo # Move to a new line after the keypress
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -- "$0" && echo "${grn}Temporary script ${red}removed${rst}."
+    else
+        echo "${mgn}Skipping cleanup. Script preserved at: ${cyn}$(realpath "$0")${rst}"
+    fi
+fi

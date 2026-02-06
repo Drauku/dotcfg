@@ -5,6 +5,8 @@
 repo_url="https://github.com/Drauku/dotcfg.git"
 repo_dir="$HOME/dotcfg"
 backup_dir="$HOME/.dotfiles_backup/$(date +%Y%m%d_%H%M%S)"
+standard_pkgs=("common")
+optional_pkgs=("docker" "server" "gaming")
 
 if [ -t 1 ] && command -v tput >/dev/null; then
     red=$(tput setaf 1); grn=$(tput setaf 2); ylw=$(tput setaf 3)
@@ -57,13 +59,19 @@ safe_stow() {
     local package=$1
     # Skip if folder doesn't exist
     [ ! -d "$package" ] && return
-    # Backup existing files
+
     echo "${blu}Stowing ${cyn}$package${rst}..."
     (
         cd "$package" || exit
-        find . -maxdepth 1 -type f -name ".*" | while read -r file; do
-            target="$HOME/${file#./}"
-            if [ -f "$target" ] && [ ! -L "$target" ]; then
+        # Iterate over all items (including hidden ones)
+        for item in .??* *; do
+            # Skip if the glob didn't match anything
+            [ ! -e "$item" ] && continue
+
+            target="$HOME/$item"
+            # If target exists and is NOT a symlink, back it up
+            if [ -e "$target" ] && [ ! -L "$target" ]; then
+                echo "${mgn}Backing up $target to $backup_dir${rst}"
                 mkdir -p "$backup_dir"
                 mv "$target" "$backup_dir/"
             fi
@@ -72,30 +80,46 @@ safe_stow() {
     # Stow indicated package
     stow -v -R "$package"
 }
+# Initialize Core Plan
+[ -f /etc/os-release ] && os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
 
-# Dynamic Feature Selection
-# Build an array of available feature directories
-features=("common")
-for dir in */; do
-    feat=$(basename "$dir")
-    [[ "$feat" == "common" ]] && continue
-    features+=("$feat")
+# Set selected packages:
+selected_pkgs=("${standard_pkgs[@]}")
+
+# Automatically add the OS-specific folder if it exists
+if [ -d "$os_id" ]; then selected_pkgs+=("$os_id"); fi
+
+# Package selection
+echo "${mgn}${bld}Optional packages:${rst}"
+
+# Optional packages
+for pkg in "${optional_pkgs[@]}"; do
+    [ ! -d "$pkg" ] && continue # Skip if folder isn't in repo
+    read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw}? (y/N): ${rst}" -n 1 -r; echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        # Only check CSM for the docker package
+        if [[ "$pkg" == "docker" ]] && [ -d "$HOME/git/container-stack-manager" ]; then
+            echo "${red}>> CSM detected. Skipping legacy docker stow.${rst}"
+            continue
+        fi
+        selected_pkgs+=("$pkg")
+    fi
 done
 
-echo "${mgn}${bld}Optional Features Detected:${rst}"
-for feature in "${features[@]}"; do
-    read -p "${ylw}Install config for [$feature]? (y/n): ${rst}" -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        # Check for specific CSM logic if feature is 'docker'
-        if [[ "$feature" == "docker" && -d "$HOME/git/container-stack-manager" ]]; then
-            echo "${red}CSM detected. Skipping legacy docker stow.${rst}"
-        else
-            safe_stow "$feature"
-        fi
-    fi
+# Final Confirmation
+echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
+echo "${ylw}The following packages will be Stow(ed)${rst}:"
+echo "  - ${grn}${selected_pkgs[*]}${rst}"
+read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r; echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "${red}Deployment aborted.${rst}"
+    exit 0
+fi
+
+for pkg in "${selected_pkgs[@]}"; do
+    safe_stow "$pkg"
 done
 
 echo "${grn}${bld}Deployment Complete!${rst}"
 [ -d "$backup_dir" ] && echo "Backups saved to: ${ylw}$backup_dir${rst}"
-echo "To complete setup, run: ${ylw}source ~/.bashrc${rst}"
+echo "To finish: ${ylw}source ~/.bashrc${rst}"

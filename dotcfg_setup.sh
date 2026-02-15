@@ -3,7 +3,7 @@
 
 # --- Variable Definitions ---
 repo_url="https://github.com/Drauku/dotcfg.git"
-repo_dir="$HOME/dotcfg"
+repo_dir="$HOME/.dotfiles"
 repo_script="$repo_dir/dotcfg_setup.sh"
 this_script="$(realpath "$0")"
 backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"
@@ -163,11 +163,11 @@ echo -e "\nTo finish: ${ylw}source ~/.bashrc${rst}"
 echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}\n"
 
 # --- Final cleanup (self-destruct) ---
-if [[ "$this_script" != "$repo_script" ]] && [ -d "$repo_dir" ]; then
-    read -p "${ylw}Clean up temporary setup script? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -- "$0" && echo -e "${grn}Temporary script ${red}removed${rst}.\n"
-    else
-        echo -e "${mgn}Skipping cleanup. Script preserved at: ${cyn}$(realpath "$0")${rst}\n"
-    fi
-fi
+# if [[ "$this_script" != "$repo_script" ]] && [ -d "$repo_dir" ]; then
+#     read -p "${ylw}Clean up temporary setup script? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
+#     if [[ $REPLY =~ ^[Yy]$ ]]; then
+#         rm -- "$0" && echo -e "${grn}Temporary script ${red}removed${rst}.\n"
+#     else
+#         echo -e "${mgn}Skipping cleanup. Script preserved at: ${cyn}$(realpath "$0")${rst}\n"
+#     fi
+# fi

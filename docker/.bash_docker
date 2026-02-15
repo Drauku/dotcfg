@@ -2,7 +2,7 @@
 # --- docker/.bash_docker ---
 
 # Check if docker user and group exists before exporting
-# NOTE: PUID 2000 and PGID 2000 are default docker user and group for CSM
+# NOTE: PUID 2000 and PGID 2000 are rstault docker user and group for CSM
 if getent passwd docker >/dev/null 2>&1 && getent group docker >/dev/null 2>&1; then
     export dk_uid="$(id -u docker 2>/dev/null)"
     export dk_gid="$(id -g docker 2>/dev/null)"
@@ -21,7 +21,8 @@ stacks_dir='/srv/stacks'
 alias stacks='cd $stacks_dir'
 
 lancheck(){ echo "Container IP: $(docker container exec -it "${*}" wget -qO- ipinfo.io)"; }
-vpncheck(){ echo "Container IP: $(docker container exec -it "${*}" wget -qO- ipinfo.io/ip)" && echo "     Host IP: $(wget -qO- ifconfig.me)"; }
+vpncheck(){ echo "Container IP: $(docker container exec -it "${*}" wget -qO- ipinfo.io/ip)" && \
+            echo "     Host IP: $(wget -qO- ifconfig.me)"; }
 
 # Load CSM or legacy aliases
 if [ -d "$csm_dir" ] && command -v csm >/dev/null 2>&1; then
@@ -29,35 +30,76 @@ if [ -d "$csm_dir" ] && command -v csm >/dev/null 2>&1; then
     alias csm-cd="cd $csm_dir"
 else
     # Set legacy docker aliases
-    dcu() { sudo docker compose -f "$stacks_dir/$1/compose.yml" up -d --remove-orphans; }
-    dcd() { sudo docker compose -f "$stacks_dir/$1/compose.yml" down; }
+
+    docker_compose_up(){ ${root_cmd:-sudo} docker compose -f $stacks_dir/${1}/compose.yml up -d --remove-orphans; }
+    alias dcu="docker_compose_up"
+
+    docker_compose_down(){ ${root_cmd:-sudo} docker compose -f $stacks_dir/${1}/compose.yml down; }
+    alias dcd="docker_compose_down"
+
     dcb() { dcd "$1" && dcu "$1"; }
-    dcl() { sudo docker compose -f "$stacks_dir/$1/compose.yml" logs -f --tail=50; }
-    dcn() { local stack="$stacks_dir/$1" && mkdir -p "$stack" && touch "$stack/compose.yml" "$stack/.env"; }
-    #     echo "${grn}Created stack structure in ${cyn}$stack${rst}"
-    # }
+
+    docker_compose_logs(){ ${root_cmd:-sudo} docker compose -f $stacks_dir/${1}/compose.yml logs -f --tail=50; }
+    alias dcl="docker_compose_logs"
+
     docker_stack_new(){
-        install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/local/${1}"
-        install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/local/${1}/compose.yml"
-        ln -sf $stacks_dir/local/${1}/.env $stacks_dir/.docker.env
-        # install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/local/${1}/.env"
-        }
+        install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/${1}"
+        install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/${1}/compose.yml"
+        ln -s $stacks_dir/$1/.env $stacks_dir/.common/.docker.env
+        echo "${grn}Created stack files in ${cyn}${stacks_dir}/$stack${rst}"
+    }
     alias dsn='docker_stack_new'
+    dks() { cd "$stacks_dir/$1" || echo "${red}Error${ylw}: Stack not found${rst}"; }
 
-    dks() { cd "$stacks_dir/$1" || echo "${red}Error: Stack not found${rst}"; }
+    # dsn() { local stack="$stacks_dir/$1" && mkdir -p "$stack" && touch "$stack/compose.yml" "$stack/.env";
+    # docker_new_local(){
+    #     install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/local/${1}"
+    #     install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/local/${1}/compose.yml"
+    #     ln -s $stacks_dir/local/${1}/.env $stacks_dir/.common/.local.env
+    #     # install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/local/${1}/.env"
+    #     }
+    # alias dnl='docker_new_local'
+    # dkl() { cd "$stacks_dir/local/$1" || echo "${red}Error${ylw}: Local stack not found${rst}"; }
 
-    # dlc() { sudo docker container list --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}"; }
-    docker_list_containers(){ docker container list --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.RunningFor}}\t{{.Image}}"; }
-    alias dlc="docker_list_containers"
+    # docker_new_swarm(){
+    #     install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/swarm/${1}"
+    #     install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/swarm/${1}/compose.yml"
+    #     ln -s $stacks_dir/swarm/${1}/.env $stacks_dir/.swarm.env
+    #     # install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/swarm/${1}/.env"
+    #     }
+    # alias dns='docker_new_stack'
+    # dkw() { cd "$stacks_dir/swarm/$1" || echo "${red}Error${ylw}: Swarm stack not found${rst}"; }
 
-    # docker_compose_up(){ docker compose -f $stacks_dir/${1}/compose.yml up -d --remove-orphans; }
-    # alias dcu="docker_compose_up"
+    docker_list_networks(){
+        printf "%sNETWORK ID\tDRIVER\tSCOPE\tNAME%s\n" $bld $rst
+        ${root_cmd:-sudo} docker network ls --format "{{.ID}}\t{{.Driver}}\t{{.Scope}}\t{{.Name}}"
+    }
+    alias dln='docker_list_networks'
 
-    # docker_compose_down(){ docker compose -f $stacks_dir/${1}/compose.yml down; }
-    # alias dcd="docker_compose_down"
+    # dlc() { sudo docker container list --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"; }
+    # docker_list_containers(){ docker container list --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.RunningFor}}\t{{.Image}}"; }
+    docker_list_containers() {
+        { # 1. Plain text header
+            printf "CONTAINER ID\tNAME\tSTATUS\tPORTS\n"
 
-    # docker_compose_logs(){ docker compose -f $stacks_dir/${1}/compose.yml logs -f --tail=50; }
-    # alias dcl="docker_compose_logs"
+            # 2. Get data, sort, and clean Ports via awk (plain text only)
+            # We strip 0.0.0.0: and IPv6 [::]: prefixes here
+            ${root_cmd:-sudo} docker ps --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}" | \
+            sort -k2,2 | \
+            awk 'BEGIN { FS="\t"; OFS="\t" } {
+                gsub(/0\.0\.0\.0:/, "", $4)
+                gsub(/, *\[::\]:[^ ]*/, "", $4)
+                print $1, $2, $3, $4
+            }'
+        } | column -ts $'\t' | sed -E "
+            1 s/^.*$/$bld&$rst/                          # Bold Header
+            2,\$ s/^([^ ]+ +)([^ ]+)/\1$blu\2$rst/       # Color Name (Col 2) Blue (Skip header)
+            s/unhealthy/$red&$rst/g                      # Color 'unhealthy' Red FIRST
+            s/\bhealthy\b/$grn&$rst/g                    # Color 'healthy' Green (only whole word)
+            s/([0-9]+\/tcp)|([0-9]+->)/$cyn&$rst/g       # Color ports Cyan
+        "
+    }
+    alias dlc='docker_list_containers'
 
     # echo "${blu}Loaded legacy Docker aliases (CSM not detected).${rst}"
 fi

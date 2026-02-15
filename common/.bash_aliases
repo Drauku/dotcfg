@@ -27,10 +27,10 @@ else
     alias ls="/bin/ls -F $lsopts"
 fi
 alias dir='ls'
-alias l='ls -clAsh'
-alias ll='ls -ahl'
-alias lh='ls -hl'
-alias la='ls -Ahl'
+alias l='ls -clAsh $lsopts'
+alias ll='ls -ahl $lspopts'
+alias lh='ls -hl $lsopts'
+alias la='ls -clash $lsopts'
 
 # --- Navigation ---
 # Using an array for "up" navigation is overkill, but keeping them concise is key
@@ -55,6 +55,28 @@ md() {
     else
         echo "Usage: md <directory>"
     fi
+}
+# Creates SSH key with unique name
+mkkey() {
+    if [ -z "$1" ]; then
+        echo "Usage: mkkey <name> [comment]" >&2
+        return 1
+    fi
+    local name="$1"
+    shift
+    local comment="${*:-$USER@$(hostname)}"
+    local keyfile="$HOME/.ssh/id_ed25519-$name"
+    if [ -e "$keyfile" ] || [ -e "$keyfile.pub" ]; then
+        echo "Error: $keyfile (or .pub) already exists" >&2
+        return 2
+    fi
+    mkdir -p "$HOME/.ssh"
+    chmod 700 "$HOME/.ssh"
+    ssh-keygen \
+        -t ed25519 \
+        -a 100 \
+        -f "$keyfile" \
+        -C "$comment"
 }
 
 # --- Git ---

@@ -81,22 +81,22 @@ else
     docker_list_containers() {
         { # 1. Plain text header
             printf "CONTAINER ID\tNAME\tSTATUS\tPORTS\n"
-
             # 2. Get data, sort, and clean Ports via awk (plain text only)
-            # We strip 0.0.0.0: and IPv6 [::]: prefixes here
+            # Strip 0.0.0.0: and IPv6 [::]: prefixes, then remove container port mappings
             ${root_cmd:-sudo} docker ps --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}" | \
             sort -k2,2 | \
             awk 'BEGIN { FS="\t"; OFS="\t" } {
                 gsub(/0\.0\.0\.0:/, "", $4)
                 gsub(/, *\[::\]:[^ ]*/, "", $4)
+                gsub(/->[0-9]+/, "", $4)
                 print $1, $2, $3, $4
             }'
         } | column -ts $'\t' | sed -E "
-            1 s/^.*$/$bld&$rst/                          # Bold Header
-            2,\$ s/^([^ ]+ +)([^ ]+)/\1$blu\2$rst/       # Color Name (Col 2) Blue (Skip header)
-            s/unhealthy/$red&$rst/g                      # Color 'unhealthy' Red FIRST
-            s/\bhealthy\b/$grn&$rst/g                    # Color 'healthy' Green (only whole word)
-            s/([0-9]+\/tcp)|([0-9]+->)/$cyn&$rst/g       # Color ports Cyan
+            1 s/^.*$/$bld&$rst/
+            2,\$ s/^([^ ]+ +)([^ ]+)/\1$cyn\2$rst/
+            s/unhealthy/$red&$rst/g
+            s/\bhealthy\b/$grn&$rst/g
+            s/([0-9]+\/[a-z]+)/$blu\1$rst/g
         "
     }
     alias dlc='docker_list_containers'

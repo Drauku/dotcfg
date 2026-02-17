@@ -44,18 +44,33 @@ else
 fi
 
 # Dependency Check (Multi-Distro)
+dependencies=("git" "stow")
+
 if command -v dnf >/dev/null 2>&1; then
     pkg_mgr="$root_cmd dnf install -y"
 elif command -v apt-get >/dev/null 2>&1; then
     pkg_mgr="$root_cmd apt-get update && $root_cmd apt-get install -y"
 elif command -v pacman >/dev/null 2>&1; then
     pkg_mgr="$root_cmd pacman -S --noconfirm"
+else
+    pkg_mgr=""
 fi
 
-for pkg in git stow; do
+if [ -n "$pkg_mgr" ]; then
+    for pkg in "${dependencies[@]}"; do
+        if ! command -v "$pkg" >/dev/null 2>&1; then
+            echo -e "${ylw}Attempting to install $pkg...${rst}"
+            eval "$pkg_mgr $pkg"
+        fi
+    done
+fi
+
+# Verify dependencies are met
+for pkg in "${dependencies[@]}"; do
     if ! command -v "$pkg" >/dev/null 2>&1; then
-        echo -e "${ylw}Installing $pkg...${rst}"
-        eval "$pkg_mgr $pkg"
+        echo -e "${red}Error: $pkg is not installed.${rst}"
+        echo -e "${ylw}Please install $pkg and re-run this script.${rst}"
+        exit 1
     fi
 done
 

@@ -14,23 +14,26 @@ for cmd in fresh micro nano vim vi; do
 done
 
 # --- Settings ---
-lsopts="--color=auto --group-directories-first --time-style=long-iso"
+export ls_opts="--group-directories-first --time-style=long-iso --color=auto"
 
 # --- Modern ls Aliases ---
 # Use the 'ls' alias inside the others to stay DRY
 # In your common/.bash_aliases
-if command -v eza >/dev/null 2>&1; then
-    alias ls='eza --group-directories-first --time-style=long-iso'
-    alias l='ls -lbhHigUmuSa'
-    alias ll='ls -lbh'
+if command -v exa >/dev/null 2>&1; then
+    # alias ls="exa --group-directories-first --time-style=long-iso"
+    alias ls="exa ${ls_opts}"
+    alias l="ls -lbhHigUmuSa"
+    alias ll="ls -lbh"
 else
-    alias ls="/bin/ls -F $lsopts"
+    alias ls="/bin/ls -F ${ls_opts}"
 fi
 alias dir='ls'
-alias l='ls -clAsh $lsopts'
-alias ll='ls -ahl $lspopts'
-alias lh='ls -hl $lsopts'
-alias la='ls -clash $lsopts'
+alias l="ls -clAsh ${ls_opts}"
+alias ll="ls -ahl ${ls_opts}"
+alias lh="ls -hl ${ls_opts}"
+alias la="ls -clash ${ls_opts}"
+
+alias l="ls -clAsh ${ls_opts}"
 
 # --- Navigation ---
 # Using an array for "up" navigation is overkill, but keeping them concise is key

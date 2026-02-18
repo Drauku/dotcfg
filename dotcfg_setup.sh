@@ -9,6 +9,7 @@ this_script="$(realpath "$0")"
 backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"
 standard_pkgs=("common")
 optional_pkgs=("docker" "server" "gaming")
+dependencies=("git" "stow" "neofetch")
 
 if [ -t 1 ] && command -v tput >/dev/null; then
     red=$(tput setaf 1); grn=$(tput setaf 2); ylw=$(tput setaf 3)
@@ -43,9 +44,8 @@ else
     root_cmd=""
 fi
 
-# Dependency Check (Multi-Distro)
-dependencies=("git" "stow")
 
+# Dependency Check (Multi-Distro)
 if command -v dnf >/dev/null 2>&1; then
     pkg_mgr="$root_cmd dnf install -y"
 elif command -v apt-get >/dev/null 2>&1; then

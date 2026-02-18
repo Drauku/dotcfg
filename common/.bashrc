@@ -44,3 +44,5 @@ fi
 # Variable and prompt cleanup
 unset configs conf dir src u_clr
 echo -ne "${rst}"
+
+neofetch

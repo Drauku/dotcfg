@@ -1,8 +1,14 @@
 #!/bin/bash
 # --- docker/.bash_docker ---
 
+# Docker stacks/projects directory
+stacks_dir='/srv/stacks'
+
+# Check if Container Stack Manager (CSM) is already handled
+csm_dir="$HOME/git/container-stack-manager"
+
 # Check if docker user and group exists before exporting
-# NOTE: PUID 2000 and PGID 2000 are rstault docker user and group for CSM
+# NOTE: PUID 2000 and PGID 2000 are default docker user and group for CSM
 if getent passwd docker >/dev/null 2>&1 && getent group docker >/dev/null 2>&1; then
     export dk_uid="$(id -u docker 2>/dev/null)"
     export dk_gid="$(id -g docker 2>/dev/null)"
@@ -13,38 +19,50 @@ if command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; the
     alias docker='podman'
 fi
 
-# Check if Container Stack Manager (CSM) is already handled
-csm_dir="$HOME/git/container-stack-manager"
-stacks_dir='/srv/stacks'
+# Safely run commands as root or non-root user
+if command -v sudo >/dev/null 2>&1; then
+    if [[ $EUID -ne 0 ]]; then
+        run_cmd() { sudo "$@"; }
+    else
+        run_cmd() { "$@"; }
+    fi
+    # Safely run docker commands with or without sudo
+    if id -Gn | grep -qw docker; then
+        docker_cmd() { docker "$@"; }
+    else
+        docker_cmd() { run_cmd docker "$@"; }
+    fi
+fi
+
+# Check host and container IPs
+hostip(){ echo "Host IP: $(wget -qO- ifconfig.me)"; }
+lancheck(){ echo "Container IP: $(docker_cmd container exec -it "${*}" wget -qO- ipinfo.io)"; }
+vpncheck(){ echo "Container IP: $(docker_cmd container exec -it "${*}" wget -qO- ipinfo.io/ip)" && \
+            echo "     Host IP: $(wget -qO- ifconfig.me)"; }
 
 # Docker shortcuts
 alias stacks='cd $stacks_dir'
 
-lancheck(){ echo "Container IP: $(docker container exec -it "${*}" wget -qO- ipinfo.io)"; }
-vpncheck(){ echo "Container IP: $(docker container exec -it "${*}" wget -qO- ipinfo.io/ip)" && \
-            echo "     Host IP: $(wget -qO- ifconfig.me)"; }
-
 # Load CSM or legacy aliases
 if [ -d "$csm_dir" ] && command -v csm >/dev/null 2>&1; then
     # Set aliases for use with CSM
-    alias csm-cd="cd $csm_dir"
-else
-    # Set legacy docker aliases
+    alias cdcsm="cd $csm_dir"
+else # Set legacy docker aliases
 
-    docker_compose_up(){ ${root_cmd:-sudo} docker compose -f $stacks_dir/${1}/compose.yml up -d --remove-orphans; }
+    docker_compose_up(){ docker_cmd compose -f $stacks_dir/${1}/compose.yml up -d --remove-orphans; }
     alias dcu="docker_compose_up"
 
-    docker_compose_down(){ ${root_cmd:-sudo} docker compose -f $stacks_dir/${1}/compose.yml down; }
-    alias dcd="docker_compose_down"
+    docker_compose_dn(){ docker_cmd compose -f $stacks_dir/${1}/compose.yml down; }
+    alias dcd="docker_compose_dn"
 
     dcb() { dcd "$1" && dcu "$1"; }
 
-    docker_compose_logs(){ ${root_cmd:-sudo} docker compose -f $stacks_dir/${1}/compose.yml logs -f --tail=50; }
+    docker_compose_logs(){ docker_cmd compose -f $stacks_dir/${1}/compose.yml logs -f --tail=50; }
     alias dcl="docker_compose_logs"
 
     docker_stack_new(){
-        install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/${1}"
-        install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/${1}/compose.yml"
+        run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/${1}"
+        run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/${1}/compose.yml"
         ln -s $stacks_dir/$1/.env $stacks_dir/.common/.docker.env
         echo "${grn}Created stack files in ${cyn}${stacks_dir}/$stack${rst}"
     }
@@ -53,26 +71,26 @@ else
 
     # dsn() { local stack="$stacks_dir/$1" && mkdir -p "$stack" && touch "$stack/compose.yml" "$stack/.env";
     # docker_new_local(){
-    #     install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/local/${1}"
-    #     install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/local/${1}/compose.yml"
+    #     run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/local/${1}"
+    #     run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/local/${1}/compose.yml"
     #     ln -s $stacks_dir/local/${1}/.env $stacks_dir/.common/.local.env
-    #     # install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/local/${1}/.env"
+    #     # run_cmd install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/local/${1}/.env"
     #     }
     # alias dnl='docker_new_local'
     # dkl() { cd "$stacks_dir/local/$1" || echo "${red}Error${ylw}: Local stack not found${rst}"; }
 
     # docker_new_swarm(){
-    #     install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/swarm/${1}"
-    #     install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/swarm/${1}/compose.yml"
+    #     run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/swarm/${1}"
+    #     run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/swarm/${1}/compose.yml"
     #     ln -s $stacks_dir/swarm/${1}/.env $stacks_dir/.swarm.env
-    #     # install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/swarm/${1}/.env"
+    #     # run_cmd install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/swarm/${1}/.env"
     #     }
     # alias dns='docker_new_stack'
     # dkw() { cd "$stacks_dir/swarm/$1" || echo "${red}Error${ylw}: Swarm stack not found${rst}"; }
 
     docker_list_networks(){
         printf "%sNETWORK ID\tDRIVER\tSCOPE\tNAME%s\n" $bld $rst
-        ${root_cmd:-sudo} docker network ls --format "{{.ID}}\t{{.Driver}}\t{{.Scope}}\t{{.Name}}"
+        docker_cmd network ls --format "{{.ID}}\t{{.Driver}}\t{{.Scope}}\t{{.Name}}"
     }
     alias dln='docker_list_networks'
 
@@ -83,7 +101,7 @@ else
             printf "CONTAINER ID\tNAME\tSTATUS\tPORTS\n"
             # 2. Get data, sort, and clean Ports via awk (plain text only)
             # Strip 0.0.0.0: and IPv6 [::]: prefixes, then remove container port mappings
-            ${root_cmd:-sudo} docker ps --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}" | \
+            docker_cmd ps --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}" | \
             sort -k2,2 | \
             awk 'BEGIN { FS="\t"; OFS="\t" } {
                 gsub(/0\.0\.0\.0:/, "", $4)

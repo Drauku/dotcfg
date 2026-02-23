@@ -49,6 +49,8 @@ if [ -d "$csm_dir" ] && command -v csm >/dev/null 2>&1; then
     alias cdcsm="cd $csm_dir"
 else # Set legacy docker aliases
 
+    run_cmd ln -s $stacks_dir ~/stacks
+
     docker_compose_up(){ docker_cmd compose -f $stacks_dir/${1}/compose.yml up -d --remove-orphans; }
     alias dcu="docker_compose_up"
 
@@ -63,7 +65,12 @@ else # Set legacy docker aliases
     docker_stack_new(){
         run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/${1}"
         run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/${1}/compose.yml"
-        ln -s $stacks_dir/$1/.env $stacks_dir/.common/.docker.env
+        local env_file="$stacks_dir/.common/.docker.env"
+        if [ -f "$env_file" ]; then
+            ln -s "$env_file" "$stacks_dir/$1/.env"
+        else
+            run_cmd install -o $dk_uid -g $dk_gid -m 774 "/dev/null $stacks_dir/${1}/.env"
+        fi
         echo "${grn}Created stack files in ${cyn}${stacks_dir}/$stack${rst}"
     }
     alias dsn='docker_stack_new'
@@ -73,8 +80,12 @@ else # Set legacy docker aliases
     # docker_new_local(){
     #     run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/local/${1}"
     #     run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/local/${1}/compose.yml"
-    #     ln -s $stacks_dir/local/${1}/.env $stacks_dir/.common/.local.env
-    #     # run_cmd install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/local/${1}/.env"
+    #     local env_file="$stacks_dir/.common/.local.env"
+    #     if [ -f "$env_file" ]; then
+    #         ln -s "$env_file" "$stacks_dir/local/$1/.env"
+    #     else
+    #       run_cmd install -o $dk_uid -g $dk_gid -m 774 "/dev/null $stacks_dir/local/${1}/.env"
+    #     fi
     #     }
     # alias dnl='docker_new_local'
     # dkl() { cd "$stacks_dir/local/$1" || echo "${red}Error${ylw}: Local stack not found${rst}"; }
@@ -82,9 +93,13 @@ else # Set legacy docker aliases
     # docker_new_swarm(){
     #     run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/swarm/${1}"
     #     run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/swarm/${1}/compose.yml"
-    #     ln -s $stacks_dir/swarm/${1}/.env $stacks_dir/.swarm.env
-    #     # run_cmd install -o 1000 -g 1000 -m 774 "/dev/null $stacks_dir/swarm/${1}/.env"
-    #     }
+    #     local env_file="$stacks_dir/.common/.swarm.env"
+    #     if [ -f "$env_file" ]; then
+    #         ln -s "$env_file" "$stacks_dir/swarm/$1/.env"
+    #     else
+    #       run_cmd install -o $dk_uid -g $dk_gid -m 774 "/dev/null $stacks_dir/swarm/${1}/.env"
+    #     fi
+    # }
     # alias dns='docker_new_stack'
     # dkw() { cd "$stacks_dir/swarm/$1" || echo "${red}Error${ylw}: Swarm stack not found${rst}"; }
 

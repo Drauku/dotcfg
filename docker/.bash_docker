@@ -62,46 +62,52 @@ else # Set legacy docker aliases
     docker_compose_logs(){ docker_cmd compose -f $stacks_dir/${1}/compose.yml logs -f --tail=50; }
     alias dcl="docker_compose_logs"
 
-    docker_stack_new(){
-        run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/${1}"
-        run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/${1}/compose.yml"
+    docker_stack_new() {
+        if [ -z "$2" ]; then echo "${red}Error${ylw}: Missing stack name${rst}"; return 1; fi
+        local scope="${1:-}"
+        local stack="${2:-}"
+        if [ "$scope" = "stack" ]; then scope=""; fi
+        local stack_path="${stacks_dir}${scope:+/$scope}/$stack"
         local env_file="$stacks_dir/.common/.docker.env"
-        if [ -f "$env_file" ]; then
-            ln -s "$env_file" "$stacks_dir/$1/.env"
-        else
-            run_cmd install -o $dk_uid -g $dk_gid -m 774 "/dev/null $stacks_dir/${1}/.env"
+        local env_link="$stack_path/.env"
+        run_cmd install -o "$dk_uid" -g "$dk_gid" -m 774 -d "$stack_path"
+        run_cmd install -o "$dk_uid" -g "$dk_gid" -m 660 /dev/null "$stack_path/compose.yml"
+        if [ ! -e "$env_link" ]; then
+            if [ -f "$env_file" ]; then
+                ln -sf "$env_file" "$env_link"
+            else
+                run_cmd install -o "$dk_uid" -g "$dk_gid" -m 774 /dev/null "$env_link"
+            fi
         fi
-        echo "${grn}Created stack files in ${cyn}${stacks_dir}/$stack${rst}"
+        echo "${grn}Created stack files in ${cyn}${stack_path}${rst}"
     }
-    alias dsn='docker_stack_new'
-    dks() { cd "$stacks_dir/$1" || echo "${red}Error${ylw}: Stack not found${rst}"; }
+    dsn() { docker_stack_new stack "$@"; }
+    dln() { docker_stack_new local "$@"; }
+    dwn() { docker_stack_new swarm "$@"; }
 
-    # dsn() { local stack="$stacks_dir/$1" && mkdir -p "$stack" && touch "$stack/compose.yml" "$stack/.env";
-    # docker_new_local(){
-    #     run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/local/${1}"
-    #     run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/local/${1}/compose.yml"
-    #     local env_file="$stacks_dir/.common/.local.env"
-    #     if [ -f "$env_file" ]; then
-    #         ln -s "$env_file" "$stacks_dir/local/$1/.env"
-    #     else
-    #       run_cmd install -o $dk_uid -g $dk_gid -m 774 "/dev/null $stacks_dir/local/${1}/.env"
-    #     fi
-    #     }
-    # alias dnl='docker_new_local'
-    # dkl() { cd "$stacks_dir/local/$1" || echo "${red}Error${ylw}: Local stack not found${rst}"; }
+    docker_stack_dir() {
+        if [ -z "$2" ]; then echo "${red}Error${ylw}: Missing stack name${rst}"; return 1; fi
+        local scope="${1:-}"
+        local stack="${2:-}"
+        if [ "$scope" = "stack" ]; then scope=""; fi
+        local target="$stacks_dir/${scope:+/$scope}/$stack"
+        [ -d "$target" ] || { echo "${red}Error${ylw}: Stack '$target' not found${rst}"; return 1; }
+        cd "$target"
+    }
+    dks() { docker_stack_dir stack "$@"; }
+    dkl() { docker_stack_dir local "$@"; }
+    dkw() { docker_stack_dir swarm "$@"; }
 
-    # docker_new_swarm(){
-    #     run_cmd install -o $dk_uid -g $dk_gid -m 774 -d "$stacks_dir/swarm/${1}"
-    #     run_cmd install -o $dk_uid -g $dk_gid -m 660 /dev/null "$stacks_dir/swarm/${1}/compose.yml"
-    #     local env_file="$stacks_dir/.common/.swarm.env"
-    #     if [ -f "$env_file" ]; then
-    #         ln -s "$env_file" "$stacks_dir/swarm/$1/.env"
-    #     else
-    #       run_cmd install -o $dk_uid -g $dk_gid -m 774 "/dev/null $stacks_dir/swarm/${1}/.env"
-    #     fi
-    # }
-    # alias dns='docker_new_stack'
-    # dkw() { cd "$stacks_dir/swarm/$1" || echo "${red}Error${ylw}: Swarm stack not found${rst}"; }
+    dkl() {
+        local target="${stacks_dir}/local/$1"
+        [ -d "$target" ] || { echo "${red}Error${ylw}: Local stack '$1' not found${rst}"; return 1; }
+        cd "$target"
+    }
+    dkw() {
+        local target="${stacks_dir}/swarm/$1"
+        [ -d "$target" ] || { echo "${red}Error${ylw}: Swarm stack '$1' not found${rst}"; return 1; }
+        cd "$target"
+    }
 
     docker_list_networks(){
         printf "%sNETWORK ID\tDRIVER\tSCOPE\tNAME%s\n" $bld $rst

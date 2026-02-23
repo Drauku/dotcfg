@@ -7,9 +7,9 @@
 # Define base configs
 configs=("aliases" "colors" "secrets" "vars")
 
-# Append dynamic feature/distro configs from ~/dotcfg
-if [ -d "$HOME/dotcfg" ]; then
-    for dir in "$HOME/dotcfg"/*/; do
+# Append dynamic feature/distro configs from ~/.dotfiles
+if [ -d "$HOME/.dotfiles" ]; then
+    for dir in "$HOME/.dotfiles"/*/; do
         # Extract folder name
         dirname=$(basename "$dir")
         # Skip 'common' and only add if not already in array

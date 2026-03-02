@@ -13,6 +13,9 @@ if command -v podman >/dev/null 2>&1; then
     export ct_engine='podman'
 elif command -v docker >/dev/null 2>&1; then
     export ct_engine='docker'
+else
+    echo "${red}Error${rst}: Neither Podman nor Docker is installed."
+    return 1
 fi
 
 # Safely run docker commands with or without sudo
@@ -33,12 +36,12 @@ fi
 # Safely run commands as root or non-root user
 if command -v sudo >/dev/null 2>&1; then
     if [[ $EUID -ne 0 ]]; then
-        run_cmd(){ sudo "$@"; }
+        run_cmd(){ sudo "$@" || echo "${red}Error: Command failed with sudo.${rst}"; }
     else
-        run_cmd(){ "$@"; }
+        run_cmd(){ "$@" || echo "${red}Error: Command failed.${rst}"; }
     fi
 else
-    run_cmd(){ "$@"; }
+    run_cmd(){ "$@" || echo "${red}Error: Command failed.${rst}"; }
 fi
 
 # Validate stacks_dir exists, prompt to create if not
@@ -70,34 +73,39 @@ alias stacks='cd $stacks_dir'
 
 # Load CSM or legacy aliases
 if [ -d "$csm_dir" ] && command -v csm >/dev/null 2>&1; then
-    cdcsm(){cd "$csm_dir" "$@"; }
+    cdcsm(){ cd "$csm_dir" "$@"; }
 else
 
-    ct_start(){ ct_cmd compose -f "$stacks_dir/${1}/compose.yml" up -d --remove-orphans; }
-    ct_stop() { ct_cmd compose -f "$stacks_dir/${1}/compose.yml" down; }
+    ct_start(){ ct_cmd compose -f "$stacks_dir/${1}/compose.yml" up -d --remove-orphans || echo "${red}Error: Failed to start stack '${1}'.${rst}"; }
+    ct_stop() { ct_cmd compose -f "$stacks_dir/${1}/compose.yml" down || echo "${red}Error: Failed to stop stack '${1}'.${rst}"; }
     ctu(){ ct_start "$@"; }
     ctd(){ ct_stop "$@"; }
 
-    ct_bounce(){ ct_stop "$1" && ct_start "$1"; }
+    ct_bounce(){ ct_stop "$1" && ct_start "$1" || echo "${red}Error: Failed to bounce stack '$1'.${rst}"; }
     ctb(){ ct_bounce "$@"; }
 
-    ct_logs(){ ct_cmd compose -f "$stacks_dir/${1}/compose.yml" logs -f --tail=50; }
+    ct_logs(){ ct_cmd compose -f "$stacks_dir/${1}/compose.yml" logs -f --tail=50 || echo "${red}Error: Failed to get logs for stack '${1}'.${rst}"; }
     ctg(){ ct_logs "$@"; }
 
     ct_new_stack(){
-        if [ "$#" -ne 2 ]; then echo "${red}Error${ylw}: Missing stack name${rst}"; return 1; fi
+        if [ "$#" -ne 2 ]; then
+            echo "${red}Error:${ylw} Missing stack name.${rst}"
+            return 1
+        fi
         local scope="$1"
         local stack="$2"
-        if [ "$scope" = "stack" ]; then scope=""; fi
+        if [ "$scope" = "stack" ]; then
+            scope=""
+        fi
         local stack_path="${stacks_dir}${scope:+/$scope}/$stack"
         local env_file="$stacks_dir/.common/.docker.env"
         local env_link="$stack_path/.env"
         if [ -z "$dk_uid" ] || [ -z "$dk_gid" ]; then
-            echo "${red}Error${rst}: $ct_engine user/group not defined — cannot create stack"; return 1
+            echo "${red}Error${rst}: $ct_engine user/group not defined — cannot create stack."; return 1
         fi
         if [[ $EUID -ne 0 ]]; then
             echo "${ylw}Creating stack requires elevated privileges.${rst}"
-            sudo -v || { echo "${red}Error${ylw}: sudo authentication failed${rst}"; return 1; }
+            sudo -v || { echo "${red}Error:${ylw} sudo authentication failed.${rst}"; return 1; }
         fi
         run_cmd install -o "$dk_uid" -g "$dk_gid" -m 774 -d "$stack_path"
         run_cmd install -o "$dk_uid" -g "$dk_gid" -m 660 /dev/null "$stack_path/compose.yml"
@@ -111,22 +119,27 @@ else
         echo "${grn}Created stack files in ${cyn}${stack_path}${rst}"
     }
     ctns(){ ct_new_stack "stack" "$@"; }
-    ctn(){ ct_new_stack "stack" "$@"; }
+    ctn(){ ct_new_stack "local" "$@"; }
 
     ct_dir(){
-        if [ "$#" -ne 2 ]; then echo "${red}Error${ylw}: Missing stack name${rst}"; return 1; fi
+        if [ "$#" -ne 2 ]; then
+            echo "${red}Error:${ylw} Missing stack name.${rst}"
+            return 1
+        fi
         local scope="$1"
         local stack="$2"
-        if [ "$scope" = "stack" ]; then scope=""; fi
+        if [ "$scope" = "stack" ]; then
+            scope=""
+        fi
         local target="${stacks_dir}${scope:+/$scope}/$stack"
-        [ -d "$target" ] || { echo "${red}Error${ylw}: Stack '${cyn}$target${ylw}' not found${rst}"; return 1; }
+        [ -d "$target" ] || { echo "${red}Error:${ylw} Stack '${cyn}$target${ylw}' not found.${rst}"; return 1; }
         cd "$target"
     }
     ctcd(){ ct_dir "stack" "$@"; }
 
     ct_list_networks(){
         printf "%sNETWORK ID\tDRIVER\tSCOPE\tNAME%s\n" "$bld" "$rst"
-        ct_cmd network ls --format "{{.ID}}\t{{.Driver}}\t{{.Scope}}\t{{.Name}}"
+        ct_cmd network ls --format "{{.ID}}\t{{.Driver}}\t{{.Scope}}\t{{.Name}}" || echo "${red}Error: Failed to list networks.${rst}"
     }
     ctln(){ ct_list_networks "$@"; }
 
@@ -148,7 +161,7 @@ else
             s/unhealthy/$red&$rst/g
             s/\bhealthy\b/$grn&$rst/g
             s/([0-9]+\/[a-z]+)/$blu\1$rst/g
-        "
+        " || echo "${red}Error: Failed to list containers.${rst}"
     }
     ctl(){ ct_list_containers "$@"; }
     ctlc(){ ct_list_containers "$@"; }

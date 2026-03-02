@@ -8,7 +8,7 @@ set_alias exa ls
 # Priority-based editor (The first one found becomes 'edit')
 for cmd in fresh micro nano vim vi; do
     if command -v "$cmd" >/dev/null 2>&1; then
-        alias edit="$cmd"
+        edit() { "$cmd" "$@"; }
         break # Stop looking once we find our preferred editor
     fi
 done

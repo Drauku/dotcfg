@@ -1,43 +1,68 @@
 #!/bin/bash
-# --- docker/.bash_docker ---
+# --- containers/.bash_ct_cmd ---
 
-# Docker stacks/projects directory
+# Container stacks/projects directory
 stacks_dir='/srv/stacks'
 
 # Check if Container Stack Manager (CSM) is already handled
 csm_dir="$HOME/git/container-stack-manager"
 
-# Check if docker user and group exists before exporting
-# NOTE: PUID 2000 and PGID 2000 are default docker user and group for CSM
-if getent passwd docker >/dev/null 2>&1 && getent group docker >/dev/null 2>&1; then
-    export dk_uid="$(id -u docker 2>/dev/null)"
-    export dk_gid="$(id -g docker 2>/dev/null)"
+# Detect if we should use Podman (common on Fedora/CoreOS)
+if command -v podman >/dev/null 2>&1; then
+    alias docker='podman'
+    export ct_engine='podman'
+elif command -v docker >/dev/null 2>&1; then
+    export ct_engine='docker'
 fi
 
-# Detect if we should use Podman (Common on Fedora/CoreOS)
-if command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
-    alias docker='podman'
+# Safely run docker commands with or without sudo
+if id -Gn | grep -qw $ct_engine; then
+    ct_cmd(){ $ct_engine "$@"; }
+else
+    ct_cmd(){ run_cmd $ct_engine "$@"; }
+fi
+
+# Check if docker user and group exists before exporting
+if getent passwd $ct_engine >/dev/null 2>&1 && getent group $ct_engine >/dev/null 2>&1; then
+    export dk_uid="$(id -u $ct_engine 2>/dev/null)"
+    export dk_gid="$(id -g $ct_engine 2>/dev/null)"
+else
+    echo "${ylw}Warning${rst}: '$ct_engine' user/group not found — stack creation may fail."
 fi
 
 # Safely run commands as root or non-root user
 if command -v sudo >/dev/null 2>&1; then
     if [[ $EUID -ne 0 ]]; then
-        run_cmd() { sudo "$@"; }
+        run_cmd(){ sudo "$@"; }
     else
-        run_cmd() { "$@"; }
+        run_cmd(){ "$@"; }
     fi
-    # Safely run docker commands with or without sudo
-    if id -Gn | grep -qw docker; then
-        docker_cmd() { docker "$@"; }
+else
+    run_cmd(){ "$@"; }
+fi
+
+# Validate stacks_dir exists, prompt to create if not
+if [ ! -d "$stacks_dir" ]; then
+    echo "${ylw}Warning${rst}: Stacks directory '${cyn}${stacks_dir}${rst}' not found."
+    printf "Create it now? [y/N] "
+    read -r reply
+    if [[ "$reply" =~ ^[Yy]$ ]]; then
+        run_cmd mkdir -p "$stacks_dir" || { echo "${red}Error${rst}: Failed to create '$stacks_dir'"; return 1; }
     else
-        docker_cmd() { run_cmd docker "$@"; }
+        echo "${red}Skipping $ct_engine alias setup — stacks directory missing.${rst}"
+        return 0
     fi
 fi
 
+# Create ~/stacks symlink if it doesn't already exist
+if [ ! -e "$HOME/stacks" ]; then
+    ln -s "$stacks_dir" "$HOME/stacks"
+fi
+
 # Check host and container IPs
-hostip(){ echo "Host IP: $(wget -qO- ifconfig.me)"; }
-lancheck(){ echo "Container IP: $(docker_cmd container exec -it "${*}" wget -qO- ipinfo.io)"; }
-vpncheck(){ echo "Container IP: $(docker_cmd container exec -it "${*}" wget -qO- ipinfo.io/ip)" && \
+hostip()  { echo "Host IP: $(wget -qO- ifconfig.me)"; }
+lancheck(){ echo "Container IP: $(ct_cmd container exec -it "${*}" wget -qO- ipinfo.io)"; }
+vpncheck(){ echo "Container IP: $(ct_cmd container exec -it "${*}" wget -qO- ipinfo.io/ip)" && \
             echo "     Host IP: $(wget -qO- ifconfig.me)"; }
 
 # Docker shortcuts
@@ -45,84 +70,71 @@ alias stacks='cd $stacks_dir'
 
 # Load CSM or legacy aliases
 if [ -d "$csm_dir" ] && command -v csm >/dev/null 2>&1; then
-    # Set aliases for use with CSM
-    alias cdcsm="cd $csm_dir"
-else # Set legacy docker aliases
+    cdcsm(){cd "$csm_dir" "$@"; }
+else
 
-    run_cmd ln -s $stacks_dir ~/stacks
+    ct_start(){ ct_cmd compose -f "$stacks_dir/${1}/compose.yml" up -d --remove-orphans; }
+    ct_stop() { ct_cmd compose -f "$stacks_dir/${1}/compose.yml" down; }
+    ctu(){ ct_start "$@"; }
+    ctd(){ ct_stop "$@"; }
 
-    docker_compose_up(){ docker_cmd compose -f $stacks_dir/${1}/compose.yml up -d --remove-orphans; }
-    alias dcu="docker_compose_up"
+    ct_bounce(){ ct_stop "$1" && ct_start "$1"; }
+    ctb(){ ct_bounce "$@"; }
 
-    docker_compose_dn(){ docker_cmd compose -f $stacks_dir/${1}/compose.yml down; }
-    alias dcd="docker_compose_dn"
+    ct_logs(){ ct_cmd compose -f "$stacks_dir/${1}/compose.yml" logs -f --tail=50; }
+    ctg(){ ct_logs "$@"; }
 
-    dcb() { dcd "$1" && dcu "$1"; }
-
-    docker_compose_logs(){ docker_cmd compose -f $stacks_dir/${1}/compose.yml logs -f --tail=50; }
-    alias dcl="docker_compose_logs"
-
-    docker_stack_new() {
-        if [ -z "$2" ]; then echo "${red}Error${ylw}: Missing stack name${rst}"; return 1; fi
-        local scope="${1:-}"
-        local stack="${2:-}"
+    ct_new_stack(){
+        if [ "$#" -ne 2 ]; then echo "${red}Error${ylw}: Missing stack name${rst}"; return 1; fi
+        local scope="$1"
+        local stack="$2"
         if [ "$scope" = "stack" ]; then scope=""; fi
         local stack_path="${stacks_dir}${scope:+/$scope}/$stack"
         local env_file="$stacks_dir/.common/.docker.env"
         local env_link="$stack_path/.env"
+        if [ -z "$dk_uid" ] || [ -z "$dk_gid" ]; then
+            echo "${red}Error${rst}: $ct_engine user/group not defined — cannot create stack"; return 1
+        fi
+        if [[ $EUID -ne 0 ]]; then
+            echo "${ylw}Creating stack requires elevated privileges.${rst}"
+            sudo -v || { echo "${red}Error${ylw}: sudo authentication failed${rst}"; return 1; }
+        fi
         run_cmd install -o "$dk_uid" -g "$dk_gid" -m 774 -d "$stack_path"
         run_cmd install -o "$dk_uid" -g "$dk_gid" -m 660 /dev/null "$stack_path/compose.yml"
         if [ ! -e "$env_link" ]; then
             if [ -f "$env_file" ]; then
                 ln -sf "$env_file" "$env_link"
             else
-                run_cmd install -o "$dk_uid" -g "$dk_gid" -m 774 /dev/null "$env_link"
+                run_cmd install -o "$dk_uid" -g "$dk_gid" -m 660 /dev/null "$env_link"
             fi
         fi
         echo "${grn}Created stack files in ${cyn}${stack_path}${rst}"
     }
-    dsn() { docker_stack_new stack "$@"; }
-    dln() { docker_stack_new local "$@"; }
-    dwn() { docker_stack_new swarm "$@"; }
+    ctns(){ ct_new_stack "stack" "$@"; }
+    ctn(){ ct_new_stack "stack" "$@"; }
 
-    docker_stack_dir() {
-        if [ -z "$2" ]; then echo "${red}Error${ylw}: Missing stack name${rst}"; return 1; fi
-        local scope="${1:-}"
-        local stack="${2:-}"
+    ct_dir(){
+        if [ "$#" -ne 2 ]; then echo "${red}Error${ylw}: Missing stack name${rst}"; return 1; fi
+        local scope="$1"
+        local stack="$2"
         if [ "$scope" = "stack" ]; then scope=""; fi
-        local target="$stacks_dir/${scope:+/$scope}/$stack"
-        [ -d "$target" ] || { echo "${red}Error${ylw}: Stack '$target' not found${rst}"; return 1; }
+        local target="${stacks_dir}${scope:+/$scope}/$stack"
+        [ -d "$target" ] || { echo "${red}Error${ylw}: Stack '${cyn}$target${ylw}' not found${rst}"; return 1; }
         cd "$target"
     }
-    dks() { docker_stack_dir stack "$@"; }
-    dkl() { docker_stack_dir local "$@"; }
-    dkw() { docker_stack_dir swarm "$@"; }
+    ctcd(){ ct_dir "stack" "$@"; }
 
-    dkl() {
-        local target="${stacks_dir}/local/$1"
-        [ -d "$target" ] || { echo "${red}Error${ylw}: Local stack '$1' not found${rst}"; return 1; }
-        cd "$target"
+    ct_list_networks(){
+        printf "%sNETWORK ID\tDRIVER\tSCOPE\tNAME%s\n" "$bld" "$rst"
+        ct_cmd network ls --format "{{.ID}}\t{{.Driver}}\t{{.Scope}}\t{{.Name}}"
     }
-    dkw() {
-        local target="${stacks_dir}/swarm/$1"
-        [ -d "$target" ] || { echo "${red}Error${ylw}: Swarm stack '$1' not found${rst}"; return 1; }
-        cd "$target"
-    }
+    ctln(){ ct_list_networks "$@"; }
 
-    docker_list_networks(){
-        printf "%sNETWORK ID\tDRIVER\tSCOPE\tNAME%s\n" $bld $rst
-        docker_cmd network ls --format "{{.ID}}\t{{.Driver}}\t{{.Scope}}\t{{.Name}}"
-    }
-    alias dln='docker_list_networks'
-
-    # dlc() { sudo docker container list --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"; }
-    # docker_list_containers(){ docker container list --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.RunningFor}}\t{{.Image}}"; }
-    docker_list_containers() {
-        { # 1. Plain text header
-            printf "CONTAINER ID\tNAME\tSTATUS\tPORTS\n"
+    ct_list_containers() {
+        { printf "CONTAINER ID\tNAME\tSTATUS\tPORTS\n"
             # 2. Get data, sort, and clean Ports via awk (plain text only)
             # Strip 0.0.0.0: and IPv6 [::]: prefixes, then remove container port mappings
-            docker_cmd ps --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}" | \
+            ct_cmd ps --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}" | \
             sort -k2,2 | \
             awk 'BEGIN { FS="\t"; OFS="\t" } {
                 gsub(/0\.0\.0\.0:/, "", $4)
@@ -138,7 +150,7 @@ else # Set legacy docker aliases
             s/([0-9]+\/[a-z]+)/$blu\1$rst/g
         "
     }
-    alias dlc='docker_list_containers'
+    ctl(){ ct_list_containers "$@"; }
+    ctlc(){ ct_list_containers "$@"; }
 
-    # echo "${blu}Loaded legacy Docker aliases (CSM not detected).${rst}"
 fi

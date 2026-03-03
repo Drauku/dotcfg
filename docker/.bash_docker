@@ -20,9 +20,9 @@ fi
 
 # Safely run docker commands with or without sudo
 if id -Gn | grep -qw $ct_engine; then
-    ct_cmd(){ $ct_engine "$@"; }
+    ct_cmd(){ $ct_engine "$@" || echo "${red}Error: Command '$ct_engine ${*}' failed.${rst}"; }
 else
-    ct_cmd(){ run_cmd $ct_engine "$@"; }
+    ct_cmd(){ run_cmd $ct_engine "$@" || echo "${red}Error: Command 'sudo $ct_engine ${*}' failed.${rst}"; }
 fi
 
 # Check if docker user and group exists before exporting

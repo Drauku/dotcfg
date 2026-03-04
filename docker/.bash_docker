@@ -3,6 +3,8 @@
 
 # Container stacks/projects directory
 stacks_dir='/srv/stacks'
+backup_dir='Sstacks_dir/.backup'
+common_dir='$stacks_dir/.common'
 
 # Check if Container Stack Manager (CSM) is already handled
 csm_dir="$HOME/git/container-stack-manager"
@@ -18,19 +20,33 @@ else
     return 1
 fi
 
-# Safely run docker commands with or without sudo
+# Safely run container commands with or without sudo
 if id -Gn | grep -qw $ct_engine; then
     ct_cmd(){ $ct_engine "$@" || echo "${red}Error: Command '$ct_engine ${*}' failed.${rst}"; }
 else
     ct_cmd(){ run_cmd $ct_engine "$@" || echo "${red}Error: Command 'sudo $ct_engine ${*}' failed.${rst}"; }
 fi
 
-# Check if docker user and group exists before exporting
-if getent passwd $ct_engine >/dev/null 2>&1 && getent group $ct_engine >/dev/null 2>&1; then
-    export dk_uid="$(id -u $ct_engine 2>/dev/null)"
-    export dk_gid="$(id -g $ct_engine 2>/dev/null)"
+# Set the user and group for stacks
+ct_usr="stacks"
+ct_grp="stacks"
+
+# Get UID and GID for the stacks user, with a default of 2000
+if id -u "$ct_usr" >/dev/null 2>&1; then
+    export ct_uid="$(id -u "$ct_usr")"
 else
-    echo "${ylw}Warning${rst}: '$ct_engine' user/group not found — stack creation may fail."
+    export ct_uid="2000"
+fi
+
+if id -g "$ct_grp" >/dev/null 2>&1; then
+    export ct_gid="$(id -g "$ct_grp")"
+else
+    export ct_gid="2000"
+fi
+
+# Check if container user and group exists before exporting
+if ! getent passwd "$ct_usr" >/dev/null 2>&1 || ! getent group "$ct_grp" >/dev/null 2>&1; then
+    echo "${ylw}Warning${rst}: '$ct_usr' user/group not found. Defaulting to User '$ct_urs', Group '$ct_grp', and UID:GID ${ct_uid}:${ct_gid}."
 fi
 
 # Safely run commands as root or non-root user
@@ -68,7 +84,7 @@ lancheck(){ echo "Container IP: $(ct_cmd container exec -it "${*}" wget -qO- ipi
 vpncheck(){ echo "Container IP: $(ct_cmd container exec -it "${*}" wget -qO- ipinfo.io/ip)" && \
             echo "     Host IP: $(wget -qO- ifconfig.me)"; }
 
-# Docker shortcuts
+# Container shortcuts
 alias stacks='cd $stacks_dir'
 
 # Load CSM or legacy aliases
@@ -87,6 +103,25 @@ else
     ct_logs(){ ct_cmd compose -f "$stacks_dir/${1}/compose.yml" logs -f --tail=50 || echo "${red}Error: Failed to get logs for stack '${1}'.${rst}"; }
     ctg(){ ct_logs "$@"; }
 
+    ct_stack_backup() {
+        local stack_name="${1:-}"
+        [[ -z "$stack_name" ]] && { log FAIL "Stack name required"; return 1; }
+
+        local stack_dir="$(get_stack_dir "$stack_name")"
+        [[ ! -d "$stack_dir" ]] && { log FAIL "Stack '$stack_name' does not exist."; return 1; }
+
+        local ts
+        ts="$(date +%Y%m%d_%H%M%S)"
+        local target_backup_dir="${backup_dir}/${stack_name}"
+        local backup_file="${target_backup_dir}/${stack_name}_${ts}.tar.gz"
+
+        mkdir -p "$target_backup_dir"
+        log INFO "Creating backup: $backup_file"
+        tar -czf "$backup_file" -C "$csm_stacks" "$stack_name"
+        log DONE "Backup complete."
+    }
+    ctbu(){ ct_stack_backup "$@"; }
+
     ct_new_stack(){
         if [ "$#" -ne 2 ]; then
             echo "${red}Error:${ylw} Missing stack name.${rst}"
@@ -98,22 +133,22 @@ else
             scope=""
         fi
         local stack_path="${stacks_dir}${scope:+/$scope}/$stack"
-        local env_file="$stacks_dir/.common/.docker.env"
+        local env_file="$common_dir/.container.env"
         local env_link="$stack_path/.env"
-        if [ -z "$dk_uid" ] || [ -z "$dk_gid" ]; then
+        if [ -z "$ct_uid" ] || [ -z "$ct_gid" ]; then
             echo "${red}Error${rst}: $ct_engine user/group not defined — cannot create stack."; return 1
         fi
         if [[ $EUID -ne 0 ]]; then
             echo "${ylw}Creating stack requires elevated privileges.${rst}"
             sudo -v || { echo "${red}Error:${ylw} sudo authentication failed.${rst}"; return 1; }
         fi
-        run_cmd install -o "$dk_uid" -g "$dk_gid" -m 774 -d "$stack_path"
-        run_cmd install -o "$dk_uid" -g "$dk_gid" -m 660 /dev/null "$stack_path/compose.yml"
+        run_cmd install -o "$ct_uid" -g "$ct_gid" -m 774 -d "$stack_path"
+        run_cmd install -o "$ct_uid" -g "$ct_gid" -m 660 /dev/null "$stack_path/compose.yml"
         if [ ! -e "$env_link" ]; then
             if [ -f "$env_file" ]; then
                 ln -sf "$env_file" "$env_link"
             else
-                run_cmd install -o "$dk_uid" -g "$dk_gid" -m 660 /dev/null "$env_link"
+                run_cmd install -o "$ct_uid" -g "$ct_gid" -m 660 /dev/null "$env_link"
             fi
         fi
         echo "${grn}Created stack files in ${cyn}${stack_path}${rst}"

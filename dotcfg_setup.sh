@@ -1,209 +1,223 @@
 #!/bin/bash
-# --- setup.sh ---
+# --- dotcfg_setup.sh ---
 
-# --- Variable Definitions ---
-repo_url="https://github.com/Drauku/dotcfg.git"
-repo_dir="$HOME/.dotfiles"
-repo_script="$repo_dir/dotcfg_setup.sh"
-this_script="$(realpath "$0")"
-backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"
-standard_pkgs=("common")
-optional_pkgs=("docker" "server" "gaming")
-dependencies=("git" "stow" "neofetch")
+# --- 1. Initialization & Variables ---
+init_vars() {
+    repo_url="https://github.com/Drauku/dotcfg.git"
+    repo_dir="$HOME/.dotfiles"
+    this_script="$(realpath "$0")"
+    backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"
 
-if [ -t 1 ] && command -v tput >/dev/null; then
-    red=$(tput setaf 1); grn=$(tput setaf 2); ylw=$(tput setaf 3)
-    blu=$(tput setaf 4); mgn=$(tput setaf 5); cyn=$(tput setaf 6)
-    bld=$(tput bold); itx=$(tput sitm); uln=$(tput smul); rst=$(tput sgr0)
-else
-    red=""; grn=""; ylw=""; blu=""; mgn=""; bld=""; itx=""; uln=""; rst=""
-fi
+    standard_pkgs=("common")
+    optional_pkgs=("docker" "server" "gaming")
+    dependencies=("git" "stow" "neofetch")
 
-# Identify OS for recommendation
-if [ -f /etc/os-release ]; then
-    os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
-    # Supplemental check for Proxmox
-    if [ -f /usr/bin/pveversion ]; then
-        os_id="proxmox"
-    fi
-fi
-
-# Script Header
-echo -e "\n${blu}${bld}>>> Launching modular dotfile setup using Stow >>>${rst}\n"
-
-# Determine root command prefix
-if [ "$(id -u)" -ne 0 ]; then
-    if command -v sudo >/dev/null 2>&1; then
-        root_cmd="sudo"
+    # Colors and Formatting using tput fallback
+    if [ -t 1 ] && command -v tput >/dev/null; then
+        red=$(tput setaf 1); grn=$(tput setaf 2); ylw=$(tput setaf 3)
+        blu=$(tput setaf 4); mgn=$(tput setaf 5); cyn=$(tput setaf 6)
+        bld=$(tput bold); itx=$(tput sitm); uln=$(tput smul); rst=$(tput sgr0)
     else
-        echo -e "${red}Error: This script requires root privileges, but sudo is not installed.${rst}"
-        echo -e "${ylw}Please run as root or install sudo.${rst}"
-        exit 1
+        red=""; grn=""; ylw=""; blu=""; mgn=""; bld=""; itx=""; uln=""; rst=""
     fi
-else
-    root_cmd=""
-fi
+}
 
+# --- 2. System Intelligence ---
+check_env() {
+    # Determine OS/Environment
+    if [ -f /etc/os-release ]; then
+        os_id=$(grep -w "ID" /etc/os-release | cut -d= -f2 | tr -d '"')
+        [ -f /usr/bin/pveversion ] && os_id="proxmox"
+    fi
 
-# Dependency Check (Multi-Distro)
-if command -v dnf >/dev/null 2>&1; then
-    pkg_mgr="$root_cmd dnf install -y"
-elif command -v apt-get >/dev/null 2>&1; then
-    pkg_mgr="$root_cmd apt-get update && $root_cmd apt-get install -y"
-elif command -v pacman >/dev/null 2>&1; then
-    pkg_mgr="$root_cmd pacman -S --noconfirm"
-else
-    pkg_mgr=""
-fi
+    # Determine root command
+    if [ "$(id -u)" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            root_cmd="sudo"
+        else
+            echo -e "${red}Error: This script requires root privileges, but sudo is not installed.${rst}"
+            exit 1
+        fi
+    else
+        root_cmd=""
+    fi
 
-if [ -n "$pkg_mgr" ]; then
+    # Determine Package Manager
+    if command -v dnf >/dev/null 2>&1; then
+        pkg_mgr="$root_cmd dnf install -y"
+    elif command -v apt-get >/dev/null 2>&1; then
+        pkg_mgr="$root_cmd apt-get update && $root_cmd apt-get install -y"
+    elif command -v pacman >/dev/null 2>&1; then
+        pkg_mgr="$root_cmd pacman -S --noconfirm"
+    else
+        pkg_mgr=""
+    fi
+}
+
+# --- 3. Dependency Management ---
+install_dependencies() {
+    if [ -n "$pkg_mgr" ]; then
+        for pkg in "${dependencies[@]}"; do
+            if ! command -v "$pkg" >/dev/null 2>&1; then
+                echo -e "${ylw}Attempting to install $pkg...${rst}"
+                eval "$pkg_mgr $pkg"
+            fi
+        done
+    fi
+
+    # Verify dependencies are met
     for pkg in "${dependencies[@]}"; do
         if ! command -v "$pkg" >/dev/null 2>&1; then
-            echo -e "${ylw}Attempting to install $pkg...${rst}"
-            eval "$pkg_mgr $pkg"
+            echo -e "${red}Error: $pkg is not installed. Please install manually.${rst}"
+            exit 1
         fi
     done
-fi
+}
 
-# Verify dependencies are met
-for pkg in "${dependencies[@]}"; do
-    if ! command -v "$pkg" >/dev/null 2>&1; then
-        echo -e "${red}Error: $pkg is not installed.${rst}"
-        echo -e "${ylw}Please install $pkg and re-run this script.${rst}"
-        exit 1
+# --- 4. Repository Management ---
+manage_repo() {
+    if [ ! -d "$repo_dir" ]; then
+        echo -e "${ylw}Cloning repository...${rst}"
+        git clone "$repo_url" "$repo_dir"
+    else
+        echo -e "${blu}Updating repository...${rst}"
+        (cd "$repo_dir" && git pull)
     fi
-done
 
-# Repo Management
-if [ ! -d "$repo_dir" ]; then
-    echo -e "${ylw}"
-    git clone "$repo_url" "$repo_dir"
-    echo -e "${rst}"
-else
-    echo -e "${blu}Updating repository...${rst}"
-    cd "$repo_dir" && git pull
-fi
-cd "$repo_dir" || exit 1
+    # Install Git Runner (Post-Merge Hook)
+    local hook_file="$repo_dir/.git/hooks/post-merge"
+    if [ -d "$repo_dir/.git" ] && [ ! -f "$hook_file" ]; then
+        echo -e "${blu}Installing Git post-merge runner...${rst}"
 
-# Install Git Runner (Post-Merge Hook installed on each host)
-hook_file="$repo_dir/.git/hooks/post-merge"
-if [ -d ".git" ] && [ ! -f "$hook_file" ]; then
-    echo -e "${blu}Installing Git post-merge runner...${rst}"
-    cat << 'EOF' > "$hook_file"
+        # Quoted 'EOF' ensures variables are evaluated at runtime, not creation time
+        cat << 'EOF' > "$hook_file"
 #!/bin/bash
-# Automatically runs setup after a successful git pull
-setup_script="$HOME/dotcfg/dotcfg_setup.sh"
+repo_root=$(git rev-parse --show-toplevel)
+setup_script="$repo_root/dotcfg_setup.sh"
 if [ -f "$setup_script" ]; then
     echo -e ">> Git merge detected. Running dotcfg_setup.sh..."
     bash "$setup_script"
 fi
 EOF
-    chmod +x "$hook_file"
-fi
+        chmod +x "$hook_file"
+    fi
 
-# Initialize Secrets (Local Only)
-if [ ! -f "$HOME/.bash_secrets" ]; then
-    echo -e "${ylw}Initializing .bash_secrets...${rst}"
-    echo -e "# Private environment variables" > "$HOME/.bash_secrets"
-fi
+    # Initialize Secrets
+    if [ ! -f "$HOME/.bash_secrets" ]; then
+        echo -e "${ylw}Initializing .bash_secrets...${rst}"
+        echo -e "# Private environment variables" > "$HOME/.bash_secrets"
+    fi
+}
 
-# Smart Backup & Stow Function
+# --- 5. Core Stow Logic ---
 safe_stow() {
     local package=$1
-    # Skip if folder doesn't exist
-    [ ! -d "$package" ] && return
+    [ ! -d "$repo_dir/$package" ] && return
 
-    local repo_root
-    repo_root="$(cd "$(dirname "$this_script")" && pwd)"
+    # repo_root is statically defined now since we know it's in $repo_dir
+    local repo_root="$repo_dir"
 
     echo -e "${blu}Stowing ${cyn}$package${rst}..."
     (
-        cd "$package" || exit
-        # Iterate over all items (including hidden ones)
+        cd "$repo_dir/$package" || exit
         for item in .??* *; do
-            # Skip if the glob didn't match anything
             [ ! -e "$item" ] && continue
-            target="$HOME/$item"
-            # If target file already exists, back it up
+            local target="$HOME/$item"
+
+            # Backup real files
             if [ -e "$target" ] && [ ! -L "$target" ]; then
-                # echo -e "${mgn}Backing up $target to $backup_dir${rst}"
+                echo -e "${mgn}Backing up $target to $backup_dir${rst}"
                 mkdir -p "$backup_dir"
                 mv "$target" "$backup_dir/"
             fi
 
+            # Correct/Broken Link Handling
             if [ -L "$target" ]; then
-                local link_dest
-                link_dest=$(readlink "$target")
-                local absolute_dest
-                absolute_dest=$(readlink -f "$target")
+                local link_dest; link_dest=$(readlink "$target")
+                local absolute_dest; absolute_dest=$(readlink -f "$target")
 
                 if [[ "$absolute_dest" != "$repo_root"* ]]; then
-                    # Calculate the new path for the prompt display
                     local new_path="${repo_root}/${package}/${item}"
-
                     echo -e "${ylw}Found incorrect or broken link: ${cyn}$item${rst}"
                     echo -e "  Current: ${red}${link_dest:-[BROKEN]}${rst}"
                     echo -e "  Correct: ${grn}$new_path${rst}"
-                    read -p "Replace with corrected link? (Y/n): " -n 1 -r < /dev/tty; [[ -n "$REPLY" ]] && echo
+
+                    read -p "  Replace with updated link? (Y/n): " -n 1 -r < /dev/tty
+                    [[ -n "$REPLY" ]] && echo
+
                     case "$REPLY" in
-                        [Nn]*)
-                            echo -e "${mgn}Skipping $item...${rst}\n"
-                            continue
-                            ;;
-                        *)
-                            [[ -z "$REPLY" ]] && echo # Adds the newline if Enter was pressed
-                            rm "$target"
-                            ;;
+                        [Nn]*) echo -e "${mgn}Skipping $item...${rst}\n"; continue ;;
+                        *) [[ -z "$REPLY" ]] && echo; rm "$target" ;;
                     esac
                 fi
             fi
         done
     )
-    stow -v -R -t "$HOME" "$package"
+    # Execute stow from inside the repo_dir to ensure proper pathing
+    (cd "$repo_dir" && stow -v -R -t "$HOME" "$package")
 }
 
-# Set selected packages:
-selected_pkgs=("${standard_pkgs[@]}")
+# --- 6. Selection UI ---
+select_packages() {
+    selected_pkgs=("${standard_pkgs[@]}")
 
-# Automatically add the OS-specific folder if it exists
-if [ -d "$os_id" ]; then selected_pkgs+=("$os_id"); fi
+    # Add OS-specific package automatically
+    [ -d "$repo_dir/$os_id" ] && selected_pkgs+=("$os_id")
 
-# Package selection
-[[ -z "$optional_pkgs" ]] && echo -e "${blu}${bld}--- Optional package selection ---${rst}\n"
-for pkg in "${optional_pkgs[@]}"; do
-    [ ! -d "$pkg" ] && continue
-    read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw} configs? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
-    case "$REPLY" in
-        [Yy]*)
-            if [[ "$pkg" == "docker" && -e "/usr/local/bin/csm" ]]; then
-                echo -e "${red}>> CSM detected. Skipping legacy docker stow.${rst}"
-            else
-                selected_pkgs+=("$pkg")
-            fi
-            ;;
-        *) continue ;;
-    esac
-done
+    [[ -z "${optional_pkgs[*]}" ]] && return
 
-# Deployment confirmation
-echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
-echo -e "${ylw}The following packages will be Stow(ed)${rst}:"
-echo -e " - ${grn}$(echo -e "${selected_pkgs[@]}" | sed 's/ /, /g')${rst}"
-# echo -e "  - ${grn}$(IFS=', '; echo "${selected_pkgs[*]}")${rst}"
-read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${red}Deployment aborted.${rst}"
-    exit 0
-fi
+    echo -e "\n${blu}${bld}--- Optional package selection ---${rst}\n"
+    for pkg in "${optional_pkgs[@]}"; do
+        [ ! -d "$repo_dir/$pkg" ] && continue
+        read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw} configs?${rst} (y/N): " -n 1 -r < /dev/tty; echo
 
-for pkg in "${selected_pkgs[@]}"; do
-    safe_stow "$pkg"
-done
+        case "$REPLY" in
+            [Yy]*)
+                if [[ "$pkg" == "docker" && -e "/usr/local/bin/csm" ]]; then
+                    echo -e "${ylw}>> CSM detected. Skipping legacy docker stow.${rst}"
+                else
+                    selected_pkgs+=("$pkg")
+                fi
+                ;;
+            *) continue ;;
+        esac
+    done
+}
 
-[ -d "$backup_dir" ] && echo -e "Backups saved to: ${mgn}$backup_dir${rst}"
+# --- 7. Deployment Execution ---
+execute_deployment() {
+    echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
+    echo -e "${ylw}The following packages will be Stow(ed)${rst}:"
+    echo -e " - ${grn}$(IFS=', '; echo "${selected_pkgs[*]}") ${rst}"
 
-echo -e "\nTo finish: ${ylw}source ~/.bashrc${rst}"
-echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}"
+    read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+        echo -e "${red}Deployment aborted.${rst}"
+        exit 0
+    fi
+
+    for pkg in "${selected_pkgs[@]}"; do
+        safe_stow "$pkg"
+    done
+
+    [ -d "$backup_dir" ] && echo -e "Backups saved to: ${mgn}$backup_dir${rst}"
+    echo -e "\nTo finish: ${ylw}source ~/.bashrc${rst}"
+    echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}"
+}
+
+# --- Main Runtime ---
+main() {
+    echo -e "\n${blu}${bld}>>> Launching modular dotfile setup using Stow >>>${rst}\n"
+    init_vars
+    check_env
+    install_dependencies
+    manage_repo
+    select_packages
+    execute_deployment
+}
+
+# Execute main function with all script arguments
+main "$@"
 
 # --- Final cleanup (self-destruct) ---
 # if [[ "$this_script" != "$repo_script" ]] && [ -d "$repo_dir" ]; then

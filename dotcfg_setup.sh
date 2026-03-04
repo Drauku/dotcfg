@@ -113,6 +113,9 @@ safe_stow() {
     # Skip if folder doesn't exist
     [ ! -d "$package" ] && return
 
+    local repo_root
+    repo_root="$(cd "$(dirname "$this_script")" && pwd)"
+
     echo -e "${blu}Stowing ${cyn}$package${rst}..."
     (
         cd "$package" || exit
@@ -120,18 +123,43 @@ safe_stow() {
         for item in .??* *; do
             # Skip if the glob didn't match anything
             [ ! -e "$item" ] && continue
-
             target="$HOME/$item"
-            # If target exists and is NOT a symlink, back it up
+            # If target file already exists, back it up
             if [ -e "$target" ] && [ ! -L "$target" ]; then
                 # echo -e "${mgn}Backing up $target to $backup_dir${rst}"
                 mkdir -p "$backup_dir"
                 mv "$target" "$backup_dir/"
             fi
+
+            if [ -L "$target" ]; then
+                local link_dest
+                link_dest=$(readlink "$target")
+                local absolute_dest
+                absolute_dest=$(readlink -f "$target")
+
+                if [[ "$absolute_dest" != "$repo_root"* ]]; then
+                    # Calculate the new path for the prompt display
+                    local new_path="${repo_root}/${package}/${item}"
+
+                    echo -e "${ylw}Found incorrect or broken link: ${cyn}$item${rst}"
+                    echo -e "  Current: ${red}${link_dest:-[BROKEN]}${rst}"
+                    echo -e "  Correct: ${grn}$new_path${rst}"
+                    read -p "Replace with corrected link? (Y/n): " -n 1 -r < /dev/tty; [[ -n "$REPLY" ]] && echo
+                    case "$REPLY" in
+                        [Nn]*)
+                            echo -e "${mgn}Skipping $item...${rst}\n"
+                            continue
+                            ;;
+                        *)
+                            [[ -z "$REPLY" ]] && echo # Adds the newline if Enter was pressed
+                            rm "$target"
+                            ;;
+                    esac
+                fi
+            fi
         done
     )
-    # Stow indicated package
-    stow -v -R "$package"
+    stow -v -R -t "$HOME" "$package"
 }
 
 # Set selected packages:
@@ -147,7 +175,7 @@ for pkg in "${optional_pkgs[@]}"; do
     read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw} configs? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
     case "$REPLY" in
         [Yy]*)
-            if [[ "$pkg" == "docker" && -d "$HOME/git/container-stack-manager" ]]; then
+            if [[ "$pkg" == "docker" && -e "/usr/local/bin/csm" ]]; then
                 echo -e "${red}>> CSM detected. Skipping legacy docker stow.${rst}"
             else
                 selected_pkgs+=("$pkg")
@@ -175,7 +203,7 @@ done
 [ -d "$backup_dir" ] && echo -e "Backups saved to: ${mgn}$backup_dir${rst}"
 
 echo -e "\nTo finish: ${ylw}source ~/.bashrc${rst}"
-echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}\n"
+echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}"
 
 # --- Final cleanup (self-destruct) ---
 # if [[ "$this_script" != "$repo_script" ]] && [ -d "$repo_dir" ]; then

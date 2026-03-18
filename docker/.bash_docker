@@ -2,9 +2,9 @@
 # --- containers/.bash_ct_cmd ---
 
 # Container stacks/projects directory
-stacks_dir='/srv/stacks'
-backup_dir='Sstacks_dir/.backup'
-common_dir='$stacks_dir/.common'
+stacks_dir="/srv/stacks"
+backup_dir="$stacks_dir/.backup"
+common_dir="$stacks_dir/.common"
 
 # Check if Container Stack Manager (CSM) is already handled
 csm_dir="$HOME/git/container-stack-manager"

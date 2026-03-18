@@ -41,6 +41,20 @@ if [ -n "$PATH" ]; then
     export PATH=$(echo -n "$PATH" | awk -v RS=: -v ORS=: '!x[$0]++' | sed 's/:$//')
 fi
 
+# SSH Agent - Interactive Shell Only
+if [[ $- == *i* ]]; then
+    # Ensure the socket is available
+    if [ -z "$SSH_AUTH_SOCK" ]; then
+        eval "$(ssh-agent -s)" &>/dev/null
+    fi
+
+    # Load keys if the agent is currently empty
+    if ssh-add -l &>/dev/null | grep -q "The agent has no identities"; then
+        # Function to find and add private keys
+        find ~/.ssh -type f -not -name "*.pub" -not -name "config" -not -name "known_hosts" -exec ssh-add {} + &>/dev/null
+    fi
+fi
+
 # Variable and prompt cleanup
 unset configs conf dir src u_clr
 echo -ne "${rst}"

@@ -82,5 +82,10 @@ mkkey() {
         -C "$comment"
 }
 
+# Function to add all keys in ~/.ssh (ignoring public keys and config)
+ssh-add-all() {
+    find ~/.ssh -type f -not -name "*.pub" -not -name "config" -not -name "known_hosts" -exec ssh-add {} +
+}
+
 # --- Git ---
 alias gitlog='git log --graph --pretty=format:"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset" --abbrev-commit'

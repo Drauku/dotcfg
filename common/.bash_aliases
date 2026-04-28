@@ -5,13 +5,6 @@ set_alias nala apt
 set_alias bat cat
 set_alias exa ls
 
-# Priority-based editor (The first one found becomes 'edit')
-for cmd in fresh micro nano vim vi; do
-    if command -v "$cmd" >/dev/null 2>&1; then
-        edit() { "$cmd" "$@"; }
-        break # Stop looking once we find our preferred editor
-    fi
-done
 
 # --- Settings ---
 export ls_opts="--group-directories-first --time-style=long-iso --color=auto"
@@ -59,10 +52,114 @@ md() {
         echo "Usage: md <directory>"
     fi
 }
-# Creates SSH key with unique name
-mkkey() {
+
+# Priority-based editor (The first one found becomes 'edit')
+unalias edit 2>/dev/null
+edit() {
+    if [ -n "$EDITOR" ] && command -v "$EDITOR" >/dev/null 2>&1; then
+        command "$EDITOR" "$@"
+        return
+    fi
+    local cmd
+    for cmd in fresh micro nano vim vi; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            command "$cmd" "$@"
+            return
+        fi
+    done
+    echo "edit: no editor found" >&2
+    return 1
+}
+alias e='edit'
+
+# Copies stdin to the best available clipboard helper.
+# If nothing is available, it prints stdin to stdout unchanged.
+toclip() {
+    if [ -t 0 ]; then
+        if command -v wl-paste >/dev/null 2>&1; then
+            wl-paste
+            return $?
+        fi
+        if command -v xclip >/dev/null 2>&1; then
+            xclip -selection clipboard -o
+            return $?
+        fi
+        if command -v xsel >/dev/null 2>&1; then
+            xsel --clipboard --output
+            return $?
+        fi
+        if command -v pbpaste >/dev/null 2>&1; then
+            pbpaste
+            return $?
+        fi
+        printf '%s\n' "toclip: no clipboard tool found" >&2
+        return 1
+    else
+        if command -v wl-copy >/dev/null 2>&1; then
+            wl-copy
+            return $?
+        fi
+        if command -v xclip >/dev/null 2>&1; then
+            xclip -selection clipboard
+            return $?
+        fi
+        if command -v xsel >/dev/null 2>&1; then
+            xsel --clipboard --input
+            return $?
+        fi
+        if command -v pbcopy >/dev/null 2>&1; then
+            pbcopy
+            return $?
+        fi
+        cat
+    fi
+}
+cb() { toclip; } # Copy to clipboard
+pb() { # Paste from clipboard
+    if command -v wl-paste >/dev/null 2>&1; then
+        wl-paste
+    elif command -v xclip >/dev/null 2>&1; then
+        xclip -selection clipboard -o
+    elif command -v xsel >/dev/null 2>&1; then
+        xsel --clipboard --output
+    elif command -v pbpaste >/dev/null 2>&1; then
+        pbpaste
+    else
+        echo "No clipboard paste tool found" >&2
+        return 1
+    fi
+}
+# Creates a hashed sha256 key
+genhash() {
     if [ -z "$1" ]; then
-        echo "Usage: mkkey <name> [comment]" >&2
+        local input
+        read -rsp "Passphrase: " input
+        echo
+        printf '%s' "$input" | sha256sum | awk '{print $1}' | toclip
+    else
+        printf '%s' "$1" | sha256sum | awk '{print $1}' | toclip
+    fi
+}
+# Creates a random hex or base64 string
+genkey() {
+    local mode="${1:-hex}"
+    local bytes="${2:-32}"
+
+    case "$mode" in
+        hex|base64) ;;
+        *)
+            echo "Usage: genkey [hex|base64] [bytes]. Defaulting to 'hex'." >&2
+            mode="hex"
+            bytes="${1:-32}"
+            ;;
+    esac
+
+    openssl rand "-$mode" "$bytes" | toclip
+}
+# Creates SSH key with unique name
+genssh() {
+    if [ -z "$1" ]; then
+        echo "Usage: genssh <name> [comment]" >&2
         return 1
     fi
     local name="$1"

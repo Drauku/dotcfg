@@ -7,7 +7,7 @@ backup_dir="$stacks_dir/.backup"
 common_dir="$stacks_dir/.common"
 
 # Check if Container Stack Manager (CSM) is already handled
-csm_dir="$HOME/git/container-stack-manager"
+csm_script="$HOME/stacks/.common/csm.sh"
 
 # Detect if we should use Podman (common on Fedora/CoreOS)
 if command -v podman >/dev/null 2>&1; then
@@ -28,8 +28,8 @@ else
 fi
 
 # Set the user and group for stacks
-ct_usr="stacks"
-ct_grp="stacks"
+ct_usr="$USER"
+ct_grp="docker"
 
 # Get UID and GID for the stacks user, with a default of 2000
 if id -u "$ct_usr" >/dev/null 2>&1; then
@@ -79,22 +79,27 @@ if [ ! -e "$HOME/stacks" ]; then
 fi
 
 # Check host and container IPs
-hostip()  { echo "Host IP: $(wget -qO- ifconfig.me)"; }
-lancheck(){ echo "Container IP: $(ct_cmd container exec -it "${*}" wget -qO- ipinfo.io)"; }
-vpncheck(){ echo "Container IP: $(ct_cmd container exec -it "${*}" wget -qO- ipinfo.io/ip)" && \
-            echo "     Host IP: $(wget -qO- ifconfig.me)"; }
-
-# Container shortcuts
-alias stacks='cd $stacks_dir'
+iphost(){ echo "Host IP: $(wget -qO- https://ifconfig.me/ip)"; }; alias myip="hostip"
+iplan() { echo "Container IP: $(ct_cmd container exec -it "${*}" wget -qO- https://ipinfo.io)"; }
+ipvpn() { echo "Container IP: $(ct_cmd container exec -it "${*}" wget -qO- https://ipinfo.io/ip)" && \
+          echo "     Host IP: $(wget -qO- https://ifconfig.me)"; }
+wtup() {
+    [[ -z \$1 ]] || echo "Usage: ctupdate <container-name>"; return 0
+    $csm_cmd run --rm --name "\$1-update" -v /var/run/$csm_cmd.sock:/var/run/$csm_cmd.sock ghcr.io/nicholas-fedor/watchtower --run-once "\$1";
+}
 
 # Load CSM or legacy aliases
-if [ -d "$csm_dir" ] && command -v csm >/dev/null 2>&1; then
-    cdcsm(){ cd "$csm_dir" "$@"; }
+if command -v csm >/dev/null 2>&1; then
+    # cd into stacks directory or a specific stack
+    (( $+aliases[cds] )) && unalias cds
+    eval "$(csm --aliases)"
+    return
 else
 
     ct_start(){ ct_cmd compose -f "$stacks_dir/${1}/compose.yml" up -d --remove-orphans || echo "${red}Error: Failed to start stack '${1}'.${rst}"; }
-    ct_stop() { ct_cmd compose -f "$stacks_dir/${1}/compose.yml" down || echo "${red}Error: Failed to stop stack '${1}'.${rst}"; }
     ctu(){ ct_start "$@"; }
+
+    ct_stop() { ct_cmd compose -f "$stacks_dir/${1}/compose.yml" down || echo "${red}Error: Failed to stop stack '${1}'.${rst}"; }
     ctd(){ ct_stop "$@"; }
 
     ct_bounce(){ ct_stop "$1" && ct_start "$1" || echo "${red}Error: Failed to bounce stack '$1'.${rst}"; }
@@ -170,7 +175,7 @@ else
         [ -d "$target" ] || { echo "${red}Error:${ylw} Stack '${cyn}$target${ylw}' not found.${rst}"; return 1; }
         cd "$target"
     }
-    ctcd(){ ct_dir "stack" "$@"; }
+    cds(){ ct_dir "stack" "$@"; }
 
     ct_list_networks(){
         printf "%sNETWORK ID\tDRIVER\tSCOPE\tNAME%s\n" "$bld" "$rst"

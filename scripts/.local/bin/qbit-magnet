@@ -1,0 +1,68 @@
+#!/bin/bash
+# ~/.local/bin/remote-qbit
+# Universal script to send magnet links to a remote qBittorrent WebUI using the API
+
+# --- CONFIGURATION ---
+HOST="qbit.xanderheim.net"
+QBIT_URL="https://$HOST"
+USERNAME="admin"
+PASSWORD="mypassword"
+# ---------------------
+
+MAGNET_LINK="$1"
+
+# --- CONFIG ---
+# --------------
+
+# Now you use $HOST for the ping and $QBIT_URL for the curl.
+if ! ping -c 1 -W 1 "$HOST" &>/dev/null; then
+    notify-send "Error" "Cannot reach $HOST"
+    exit 1
+fi
+# 1. Pre-flight Check: Is the server even reachable?
+# -W 1 (wait 1 sec), -c 1 (1 packet). Extract IP from URL.
+SERVER_IP=$(echo "$QBIT_URL" | sed -e 's/[^/]*\/\/\([^@/]*@\)\?\([^:/]*\).*/\2/')
+if ! ping -c 1 -W 1 "$SERVER_IP" &>/dev/null; then
+    notify-send "qBit Error" "Server $SERVER_IP is unreachable on LAN" --urgency=critical
+    exit 1
+elif ! nc -z -w 1 "$SERVER_IP" 8080; then
+    notify-send "qBit Error" "Port 8080 on $SERVER_IP is closed." --urgency=critical
+    exit 1
+fi
+
+# 2. Login and get Authentication Cookie
+# We use a temporary file to store headers for SID extraction
+COOKIE_FILE=$(mktemp)
+
+# Perform Login
+# Note: --header "Referer" is mandatory for qBit CSRF protection
+login_response=$(curl -s -i --header "Referer: $QBIT_URL" \
+    --data "username=$USERNAME&password=$PASSWORD" \
+    "$QBIT_URL/api/v2/auth/login")
+
+# Extract SID (Session ID)
+SID=$(echo "$login_response" | grep -o 'SID=[^;]*' | head -1)
+
+if [ -z "$SID" ]; then
+    notify-send "qBit Error" "Login failed. Check credentials/WebUI access." --urgency=critical
+    rm "$COOKIE_FILE"
+    exit 1
+fi
+
+# 3. Add the Torrent
+# We use --data-urlencode to ensure the magnet string is handled correctly by the API
+add_request=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST --header "Referer: $QBIT_URL" \
+    --cookie "$SID" \
+    --data-urlencode "urls=$MAGNET_LINK" \
+    "$QBIT_URL/api/v2/torrents/add")
+
+# 4. Feedback Loop
+if [ "$add_request" == "200" ]; then
+    notify-send "Torrent Added" "Successfully sent to $SERVER_IP" --icon=emblem-downloads
+else
+    notify-send "qBit Error" "API returned error code: $add_request" --urgency=critical
+fi
+
+# Cleanup
+rm "$COOKIE_FILE"

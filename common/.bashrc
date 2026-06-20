@@ -59,4 +59,4 @@ fi
 unset configs conf dir src u_clr
 echo -ne "${rst}"
 
-neofetch
+[[ $(which fastfetch) ]] && fastfetch

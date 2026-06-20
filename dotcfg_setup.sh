@@ -10,7 +10,8 @@ init_vars() {
 
     standard_pkgs=("common")
     optional_pkgs=("docker" "server" "gaming")
-    dependencies=("git" "stow" "neofetch")
+    dependencies=("git" "stow")
+    optional_apps=("fastfetch")
 
     # Colors and Formatting using tput fallback
     if [ -t 1 ] && command -v tput >/dev/null; then

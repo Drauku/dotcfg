@@ -91,7 +91,8 @@ wtup() {
 # Load CSM or legacy aliases
 if command -v csm >/dev/null 2>&1; then
     # cd into stacks directory or a specific stack
-    (( $+aliases[cds] )) && unalias cds
+    if alias cds >/dev/null 2>&1; then unalias cds; fi
+    # (( $+aliases[cds] )) && unalias cds # zfs compatible only
     eval "$(csm --aliases)"
     return
 else
@@ -162,16 +163,12 @@ else
     ctn(){ ct_new_stack "local" "$@"; }
 
     ct_dir(){
-        if [ "$#" -ne 2 ]; then
-            echo "${red}Error:${ylw} Missing stack name.${rst}"
-            return 1
-        fi
-        local scope="$1"
-        local stack="$2"
-        if [ "$scope" = "stack" ]; then
-            scope=""
-        fi
-        local target="${stacks_dir}${scope:+/$scope}/$stack"
+        local scope stack target
+        scope="$1"
+        stack="$2"
+        [ "$#" -ne 2 ] && { echo "${red}Error:${ylw} Missing stack name.${rst}"; return 1; }
+        [ "$scope" = "stack" ] && scope=""
+        target="${stacks_dir}${scope:+/$scope}/$stack"
         [ -d "$target" ] || { echo "${red}Error:${ylw} Stack '${cyn}$target${ylw}' not found.${rst}"; return 1; }
         cd "$target"
     }

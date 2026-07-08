@@ -29,7 +29,7 @@ if [[ -z "$STARSHIP_SHELL$POSH_THEME$P9K_TTY" ]]; then
     if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
         # UID check for color coding
         [ "$(id -u)" -eq 0 ] && u_clr=$red || u_clr=$grn
-        export PS1="\[$u_clr\]\u\[$ylw\]@\[$blu\]\h\[$wht\]: \[$cyn\]\w\[$blk\] \[$mgn\]\$ \[$rst\]"
+        export PS1="\[$u_clr\]\u\[$ylw\]@\[$cyn\]\h\[$wht\]: \[$blu\]\w\[$blk\] \[$mgn\]\$ \[$rst\]"
     else
         # Fallback for non-color terminals
         PS1='${debian_chroot:+($debian_chroot)}\u@\h: \w\$ '

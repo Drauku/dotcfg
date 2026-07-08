@@ -30,7 +30,7 @@ else
     # Null out if no terminal support
     export red="" orn="" ylw="" grn="" cyn="" blu="" prp="" mgn="" wht="" blk="" bld="" itx="" uln="" rst=""
 fi
-# echo " $red red $orn orn $ylw ylw $grn grn $cyn cyn $blu blu $prp prp $mgn mgn $wht wht $blk blk $rst rst"
+# echo -e " $red red$rst$orn orn$rst$ylw ylw$rst$grn grn$rst$cyn cyn$rst$blu blu$rst$prp prp$rst$mgn mgn$rst$wht wht$rst$blk blk$rst rst"
 
 # Usage
 # echo "${red}Error:${rst} Something went wrong."

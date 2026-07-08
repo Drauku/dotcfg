@@ -82,7 +82,11 @@ manage_repo() {
         git clone "$repo_url" "$repo_dir"
     else
         echo -e "${blu}Updating repository...${rst}"
-        (cd "$repo_dir" && git pull)
+        if ! (cd "$repo_dir" && git pull); then
+            echo -e "${red}Error: git pull failed in $repo_dir (likely local changes conflicting with upstream).${rst}"
+            echo -e "${red}Resolve or stash the local changes in $repo_dir, then re-run this script.${rst}"
+            exit 1
+        fi
     fi
 
     # Install Git Runner (Post-Merge Hook)

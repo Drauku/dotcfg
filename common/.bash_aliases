@@ -208,10 +208,9 @@ tmx() {
   socket="dir_$slug"
 
   if [ ! -f "$conf" ]; then
-    cat >"$conf" <<'EOF'
-set -g mouse on
-set -g history-limit 100000
-EOF
+    printf '%s\n' \
+      'set -g mouse on' \
+      'set -g history-limit 100000' > "$conf"
   fi
 
   if command tmux -L "$socket" has-session -t "$session" 2>/dev/null; then

@@ -186,3 +186,37 @@ ssh-add-all() {
 
 # --- Git ---
 alias gitlog='git log --graph --pretty=format:"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset" --abbrev-commit'
+
+alias tmux='command tmux'
+tmx() {
+  if ! command -v tmux >/dev/null 2>&1; then
+    echo "tmux is not installed or not in PATH" >&2
+    return 127
+  fi
+
+  if [ "$#" -gt 0 ]; then
+    command tmux "$@"
+    return
+  fi
+
+  local dir slug session socket conf
+  dir="$PWD"
+  conf="$dir/.tmux.conf.local"
+
+  slug="$(printf '%s' "$dir" | shasum | awk '{print $1}' | cut -c1-12)"
+  session="dir_$slug"
+  socket="dir_$slug"
+
+  if [ ! -f "$conf" ]; then
+    cat >"$conf" <<'EOF'
+set -g mouse on
+set -g history-limit 100000
+EOF
+  fi
+
+  if command tmux -L "$socket" has-session -t "$session" 2>/dev/null; then
+    command tmux -L "$socket" attach-session -t "$session"
+  else
+    command tmux -L "$socket" -f "$conf" new-session -s "$session" -c "$dir"
+  fi
+}

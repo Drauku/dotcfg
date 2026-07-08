@@ -2,7 +2,7 @@
 # --- containers/.bash_ct_cmd ---
 
 # Container stacks/projects directory
-stacks_dir="/srv/stacks"
+stacks_dir="$HOME/stacks"
 backup_dir="$stacks_dir/.backup"
 common_dir="$stacks_dir/.common"
 

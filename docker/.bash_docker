@@ -46,7 +46,7 @@ fi
 
 # Check if container user and group exists before exporting
 if ! getent passwd "$ct_usr" >/dev/null 2>&1 || ! getent group "$ct_grp" >/dev/null 2>&1; then
-    echo "${ylw}Warning${rst}: '$ct_usr' user/group not found. Defaulting to User '$ct_urs', Group '$ct_grp', and UID:GID ${ct_uid}:${ct_gid}."
+    echo "${ylw}Warning${rst}: user '$ct_usr' or group '$ct_grp' not registered in NSS; using UID:GID ${ct_uid}:${ct_gid}."
 fi
 
 # Safely run commands as root or non-root user

@@ -180,13 +180,37 @@ select_packages() {
             [Yy]*)
                 if [[ "$pkg" == "docker" && -e "/usr/local/bin/csm" ]]; then
                     echo -e "${ylw}>> CSM detected. Skipping legacy docker stow.${rst}"
+                    unstow_package "$pkg"
                 else
                     selected_pkgs+=("$pkg")
                 fi
                 ;;
-            *) continue ;;
+            *) unstow_package "$pkg" ;;
         esac
     done
+}
+
+# Remove any previously stowed symlinks for a declined/skipped package.
+# 'stow -D' only unlinks targets that point back into this package, so it is
+# safe to run even when the package was never stowed.
+unstow_package() {
+    local package=$1
+    [ ! -d "$repo_dir/$package" ] && return
+
+    # Only act if at least one live symlink points into this package.
+    local found=""
+    for item in "$repo_dir/$package"/.??* "$repo_dir/$package"/*; do
+        [ ! -e "$item" ] && continue
+        local target="$HOME/$(basename "$item")"
+        if [ -L "$target" ] && [[ "$(readlink -f "$target")" == "$repo_dir/$package"* ]]; then
+            found=1
+            break
+        fi
+    done
+    [ -z "$found" ] && return
+
+    echo -e "${ylw}>> Removing previously stowed ${cyn}$package${rst}${ylw} configs...${rst}"
+    (cd "$repo_dir" && stow -v -D -t "$HOME" "$package")
 }
 
 # --- 7. Deployment Execution ---

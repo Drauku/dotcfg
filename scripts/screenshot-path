@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+# screenshot-path — take an interactive screenshot and copy the saved file's
+# PATH (shell-quoted text) to the clipboard, instead of the image data.
+#
+# Why: terminals reject image pastes. This lets you screenshot, then
+# Ctrl+Shift+V the path straight into a terminal (e.g. for an AI CLI that
+# reads image files by path).
+#
+# How it works:
+#   Calls the freedesktop Screenshot portal (org.freedesktop.portal.Screenshot)
+#   over D-Bus with interactive=true. Your desktop's native screenshot UI
+#   opens (GNOME Shell UI on GNOME, Spectacle on KDE). After capture, the
+#   portal returns the saved file's URI; the path is shell-quoted and copied
+#   to the clipboard. Cancelling exits quietly with status 1.
+#
+# Works on any desktop with an xdg-desktop-portal Screenshot backend:
+#   GNOME (xdg-desktop-portal-gnome), KDE (xdg-desktop-portal-kde),
+#   wlroots compositors (xdg-desktop-portal-wlr), etc.
+#
+# Dependencies:
+#   - python3 + python-gobject (gi)  [Arch: python-gobject, Debian: python3-gi]
+#   - clipboard tool: wl-copy on Wayland [wl-clipboard], xclip on X11
+#   - optional: notify-send for a confirmation popup [libnotify]
+#
+# Install:
+#   Copy or symlink into ~/.local/bin and chmod +x, e.g.:
+#     ln -s ~/git/dotcfg/scripts/screenshot-path ~/.local/bin/screenshot-path
+#
+# Hotkey setup (suggested: Ctrl+Print):
+#   GNOME — register a custom keybinding:
+#     BASE=org.gnome.settings-daemon.plugins.media-keys
+#     KEY=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom1/
+#     gsettings set $BASE custom-keybindings "[..existing.., '$KEY']"
+#     gsettings set $BASE.custom-keybinding:$KEY name 'Screenshot (copy path)'
+#     gsettings set $BASE.custom-keybinding:$KEY command "$HOME/.local/bin/screenshot-path"
+#     gsettings set $BASE.custom-keybinding:$KEY binding '<Control>Print'
+#   KDE — System Settings > Keyboard > Shortcuts > Add Command, point it at
+#     this script and assign a key.
+
+import os
+import shlex
+import subprocess
+import sys
+from urllib.parse import unquote, urlparse
+
+import gi
+from gi.repository import Gio, GLib
+
+TOKEN = "screenshotpath1"
+
+
+def copy_to_clipboard(text: str) -> None:
+    # Wayland first, X11 fallback.
+    if os.environ.get("WAYLAND_DISPLAY"):
+        subprocess.run(["wl-copy", text], check=True)
+    else:
+        subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+
+
+def main():
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    sender = bus.get_unique_name()[1:].replace(".", "_")
+    request_path = f"/org/freedesktop/portal/desktop/request/{sender}/{TOKEN}"
+    loop = GLib.MainLoop()
+    result = {}
+
+    def on_response(_bus, _sender, _path, _iface, _signal, params):
+        code, results = params.unpack()
+        if code == 0:
+            result["uri"] = results.get("uri")
+        loop.quit()
+
+    bus.signal_subscribe(
+        "org.freedesktop.portal.Desktop",
+        "org.freedesktop.portal.Request",
+        "Response",
+        request_path,
+        None,
+        Gio.DBusSignalFlags.NONE,
+        on_response,
+    )
+
+    bus.call_sync(
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Screenshot",
+        "Screenshot",
+        GLib.Variant(
+            "(sa{sv})",
+            ("", {"handle_token": GLib.Variant("s", TOKEN), "interactive": GLib.Variant("b", True)}),
+        ),
+        GLib.VariantType("(o)"),
+        Gio.DBusCallFlags.NONE,
+        -1,
+        None,
+    )
+
+    loop.run()
+
+    uri = result.get("uri")
+    if not uri:
+        sys.exit(1)  # cancelled or failed
+
+    path = unquote(urlparse(uri).path)
+    copy_to_clipboard(shlex.quote(path))
+    subprocess.run(
+        ["notify-send", "-a", "Screenshot", "Path copied", path],
+        check=False,
+    )
+
+
+if __name__ == "__main__":
+    main()

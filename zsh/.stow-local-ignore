@@ -1,0 +1,4 @@
+# Do not symlink the provisioning script into $HOME; it is meant to be run
+# from the repo, not installed as a dotfile. Only .p10k.zsh should be stowed.
+install-zsh-p10k\.sh
+README.*

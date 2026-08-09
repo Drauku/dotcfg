@@ -12,3 +12,6 @@
 
 # Ignore the setup script's temporary artifacts
 *.log
+
+# Ignore Polaris/agent session + council artifacts
+.polaris/

@@ -5,18 +5,18 @@
 Install using this curl command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Drauku/dotcfg/refs/heads/master/dotcfg_setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/Drauku/dotcfg/refs/heads/master/setup_dotcfg.sh | bash
 ```
 
 If you prefer to use `wget` instead of `curl`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/Drauku/dotcfg/refs/heads/master/dotcfg_setup.sh | bash
+wget -qO- https://raw.githubusercontent.com/Drauku/dotcfg/refs/heads/master/setup_dotcfg.sh | bash
 ```
 
 If you prefer to download and check the code (recommended):
 ```bash
-curl -sSLO https://raw.githubusercontent.com/Drauku/dotcfg/master/dotcfg_setup.sh -o dotcfg_setup.sh
+curl -sSLO https://raw.githubusercontent.com/Drauku/dotcfg/master/setup_dotcfg.sh -o setup_dotcfg.sh
 ```
 
-- Verify the script is safe, then `chmod +x dotcfg_setup.sh` and run it: `./dotcfg_setup.sh`.
+- Verify the script is safe, then `chmod +x setup_dotcfg.sh` and run it: `./setup_dotcfg.sh`.

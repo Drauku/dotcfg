@@ -1,5 +1,5 @@
 #!/bin/bash
-# --- dotcfg_setup.sh ---
+# --- setup_dotcfg.sh ---
 
 # --- 1. Initialization & Variables ---
 init_vars() {
@@ -9,9 +9,13 @@ init_vars() {
     backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"
 
     standard_pkgs=("common")
-    optional_pkgs=("docker" "server" "gaming")
+    optional_pkgs=("zsh" "docker" "server" "gaming")
     dependencies=("git" "stow")
     optional_apps=("fastfetch")
+
+    # Set when the user opts to run the bundled zsh environment installer
+    # (oh-my-zsh, powerlevel10k, fonts, plugins, .zshrc wiring) after stowing.
+    run_zsh_install=""
 
     # Colors and Formatting using tput fallback
     if [ -t 1 ] && command -v tput >/dev/null; then
@@ -98,9 +102,9 @@ manage_repo() {
         cat << 'EOF' > "$hook_file"
 #!/bin/bash
 repo_root=$(git rev-parse --show-toplevel)
-setup_script="$repo_root/dotcfg_setup.sh"
+setup_script="$repo_root/setup_dotcfg.sh"
 if [ -f "$setup_script" ]; then
-    echo -e ">> Git merge detected. Running dotcfg_setup.sh..."
+    echo -e ">> Git merge detected. Running setup_dotcfg.sh..."
     bash "$setup_script"
 fi
 EOF
@@ -183,6 +187,13 @@ select_packages() {
                     unstow_package "$pkg"
                 else
                     selected_pkgs+=("$pkg")
+                    # Follow-up: offer to provision the full zsh environment.
+                    # Stowing alone only links ~/.p10k.zsh; this installs the
+                    # packages/fonts/plugins and wires ~/.zshrc to source it.
+                    if [[ "$pkg" == "zsh" ]]; then
+                        read -p "  ${ylw}└─ Also install the zsh environment (oh-my-zsh, powerlevel10k, fonts, plugins, .zshrc)?${rst} (y/N): " -n 1 -r < /dev/tty; echo
+                        [[ "$REPLY" =~ ^[Yy]$ ]] && run_zsh_install=1
+                    fi
                 fi
                 ;;
             *) unstow_package "$pkg" ;;
@@ -229,8 +240,25 @@ execute_deployment() {
         safe_stow "$pkg"
     done
 
+    # Provision the zsh environment after stowing so ~/.p10k.zsh is already
+    # symlinked when the installer runs (it detects the managed link and skips
+    # overwriting the config).
+    if [[ -n "$run_zsh_install" ]] && [ -f "$repo_dir/zsh/install-zsh-p10k.sh" ]; then
+        echo -e "\n${blu}${bld}--- Installing zsh environment ---${rst}"
+        if ! bash "$repo_dir/zsh/install-zsh-p10k.sh"; then
+            echo -e "${red}Error: zsh environment install failed. Stow completed; review the output above.${rst}"
+            [ -d "$backup_dir" ] && echo -e "Backups saved to: ${mgn}$backup_dir${rst}"
+            echo -e "Your other stowed packages are in place — run ${ylw}source ~/.bashrc${rst} to load them."
+            exit 1
+        fi
+    fi
+
     [ -d "$backup_dir" ] && echo -e "Backups saved to: ${mgn}$backup_dir${rst}"
-    echo -e "\nTo finish: ${ylw}source ~/.bashrc${rst}"
+    if [[ -n "$run_zsh_install" ]]; then
+        echo -e "\nTo finish: ${ylw}source ~/.bashrc${rst}, then run ${ylw}exec zsh${rst} (or open a new terminal) to load the zsh/powerlevel10k changes."
+    else
+        echo -e "\nTo finish: ${ylw}source ~/.bashrc${rst}"
+    fi
     echo -e "\n${grn}${bld}--- Deployment Complete ---${rst}"
 }
 

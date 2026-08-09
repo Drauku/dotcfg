@@ -21,12 +21,12 @@ else
     alias ls="/bin/ls -F ${ls_opts}"
 fi
 alias dir='ls'
-alias l="ls -clAsh ${ls_opts}"
+alias l="ls -lAsh ${ls_opts}"
 alias ll="ls -ahl ${ls_opts}"
 alias lh="ls -hl ${ls_opts}"
-alias la="ls -clash ${ls_opts}"
+alias la="ls -lash ${ls_opts}"
 
-alias l="ls -clAsh ${ls_opts}"
+alias l="ls -lAsh ${ls_opts}"
 
 # --- Navigation ---
 # Using an array for "up" navigation is overkill, but keeping them concise is key

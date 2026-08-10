@@ -23,8 +23,8 @@
 #   - optional: notify-send for a confirmation popup [libnotify]
 #
 # Install:
-#   Copy or symlink into ~/.local/bin and chmod +x, e.g.:
-#     ln -s ~/git/dotcfg/scripts/screenshot-path ~/.local/bin/screenshot-path
+#   Stowed into ~/.local/bin by install.sh via the 'scripts' package. To link it
+#   by hand: ln -s ~/.dotfiles/scripts/.local/bin/screenshot-path ~/.local/bin/
 #
 # Hotkey setup (suggested: Ctrl+Print):
 #   GNOME — register a custom keybinding:
@@ -37,16 +37,34 @@
 #   KDE — System Settings > Keyboard > Shortcuts > Add Command, point it at
 #     this script and assign a key.
 
+import fcntl
 import os
 import shlex
 import subprocess
 import sys
+import tempfile
+import uuid
 from urllib.parse import unquote, urlparse
 
 import gi
 from gi.repository import Gio, GLib
 
-TOKEN = "screenshotpath1"
+LOCK_NAME = "screenshot-path.lock"
+
+
+def single_instance_lock():
+    # An exclusive lock held for the process lifetime; a second run gets None
+    # while the portal dialog from the first is still open.
+    path = os.path.join(
+        os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir(), LOCK_NAME
+    )
+    handle = open(path, "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
 
 
 def copy_to_clipboard(text: str) -> None:
@@ -58,9 +76,17 @@ def copy_to_clipboard(text: str) -> None:
 
 
 def main():
+    lock = single_instance_lock()
+    if lock is None:
+        sys.exit(0)  # a capture is already in progress
+
+    # The portal requires a handle_token unique per request; it forms the object
+    # path the Response signal arrives on.
+    token = f"screenshotpath{uuid.uuid4().hex}"
+
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     sender = bus.get_unique_name()[1:].replace(".", "_")
-    request_path = f"/org/freedesktop/portal/desktop/request/{sender}/{TOKEN}"
+    request_path = f"/org/freedesktop/portal/desktop/request/{sender}/{token}"
     loop = GLib.MainLoop()
     result = {}
 
@@ -70,7 +96,7 @@ def main():
             result["uri"] = results.get("uri")
         loop.quit()
 
-    bus.signal_subscribe(
+    subscription = bus.signal_subscribe(
         "org.freedesktop.portal.Desktop",
         "org.freedesktop.portal.Request",
         "Response",
@@ -80,22 +106,27 @@ def main():
         on_response,
     )
 
-    bus.call_sync(
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.Screenshot",
-        "Screenshot",
-        GLib.Variant(
-            "(sa{sv})",
-            ("", {"handle_token": GLib.Variant("s", TOKEN), "interactive": GLib.Variant("b", True)}),
-        ),
-        GLib.VariantType("(o)"),
-        Gio.DBusCallFlags.NONE,
-        -1,
-        None,
-    )
-
-    loop.run()
+    try:
+        bus.call_sync(
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Screenshot",
+            "Screenshot",
+            GLib.Variant(
+                "(sa{sv})",
+                ("", {"handle_token": GLib.Variant("s", token), "interactive": GLib.Variant("b", True)}),
+            ),
+            GLib.VariantType("(o)"),
+            Gio.DBusCallFlags.NONE,
+            -1,
+            None,
+        )
+        loop.run()
+    except GLib.Error as err:
+        print(f"screenshot-path: portal call failed: {err.message}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        bus.signal_unsubscribe(subscription)
 
     uri = result.get("uri")
     if not uri:

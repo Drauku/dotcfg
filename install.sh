@@ -3,7 +3,7 @@
 
 # --- 1. Initialization & Variables ---
 init_vars() {
-    repo_url="https://github.com/Drauku/dotcfg.git"
+    repo_url="https://github.com/Drauku/.dotfiles.git"
     repo_dir="$HOME/.dotfiles"
     this_script="$(realpath "$0")"
     backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"

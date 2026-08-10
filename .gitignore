@@ -15,3 +15,6 @@
 
 # Ignore Polaris/agent session + council artifacts
 .polaris/
+
+# Ignore Python bytecode cache next to stowed scripts
+__pycache__/

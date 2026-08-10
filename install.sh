@@ -1,5 +1,5 @@
 #!/bin/bash
-# --- setup_dotcfg.sh ---
+# --- install.sh ---
 
 # --- 1. Initialization & Variables ---
 init_vars() {
@@ -9,7 +9,7 @@ init_vars() {
     backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"
 
     standard_pkgs=("common")
-    optional_pkgs=("zsh" "docker" "server" "gaming")
+    optional_pkgs=("zsh" "scripts" "docker" "server" "gaming")
     dependencies=("git" "stow")
     optional_apps=("fastfetch")
 
@@ -94,21 +94,27 @@ manage_repo() {
     fi
 
     # Install Git Runner (Post-Merge Hook)
+    # Regenerated whenever the file on disk differs from the expected body.
     local hook_file="$repo_dir/.git/hooks/post-merge"
-    if [ -d "$repo_dir/.git" ] && [ ! -f "$hook_file" ]; then
-        echo -e "${blu}Installing Git post-merge runner...${rst}"
-
+    if [ -d "$repo_dir/.git" ]; then
         # Quoted 'EOF' ensures variables are evaluated at runtime, not creation time
-        cat << 'EOF' > "$hook_file"
+        local hook_body
+        hook_body=$(cat << 'EOF'
 #!/bin/bash
 repo_root=$(git rev-parse --show-toplevel)
-setup_script="$repo_root/setup_dotcfg.sh"
+setup_script="$repo_root/install.sh"
 if [ -f "$setup_script" ]; then
-    echo -e ">> Git merge detected. Running setup_dotcfg.sh..."
+    echo -e ">> Git merge detected. Running install.sh..."
     bash "$setup_script"
 fi
 EOF
-        chmod +x "$hook_file"
+        )
+
+        if [ ! -f "$hook_file" ] || [ "$(cat "$hook_file")" != "$hook_body" ]; then
+            echo -e "${blu}Installing Git post-merge runner...${rst}"
+            printf '%s\n' "$hook_body" > "$hook_file"
+            chmod +x "$hook_file"
+        fi
     fi
 
     # Initialize Secrets
@@ -119,6 +125,37 @@ EOF
 }
 
 # --- 5. Core Stow Logic ---
+
+# Pre-create the package's directory tree under $HOME: stow folds a whole
+# directory into a single symlink when the target does not already exist.
+precreate_dirs() {
+    local package=$1
+    local pkg_dir="$repo_dir/$package"
+    local rel target skipped=""
+
+    while IFS= read -r rel; do
+        # Children of a skipped parent are skipped along with it.
+        [[ -n "$skipped" && "$rel" == $skipped/* ]] && continue
+
+        target="$HOME/$rel"
+
+        if [ -L "$target" ]; then
+            if [[ "$(readlink -f "$target")" == "$pkg_dir"* ]]; then
+                # A folded directory. The repo holds the real files, so stow
+                # re-links them individually into the directory created below.
+                echo -e "${ylw}Unfolding stow-folded directory: ${cyn}~/$rel${rst}"
+                rm "$target"
+            else
+                echo -e "${ylw}Skipping ${cyn}~/$rel${rst}${ylw}: symlink points outside $package.${rst}"
+                skipped="$rel"
+                continue
+            fi
+        fi
+
+        mkdir -p "$target"
+    done < <(cd "$pkg_dir" && find . -mindepth 1 -type d -printf '%P\n' | sort)
+}
+
 safe_stow() {
     local package=$1
     [ ! -d "$repo_dir/$package" ] && return
@@ -133,8 +170,9 @@ safe_stow() {
             [ ! -e "$item" ] && continue
             local target="$HOME/$item"
 
-            # Backup real files
-            if [ -e "$target" ] && [ ! -L "$target" ]; then
+            # Backup conflicting real files. A directory present on both sides
+            # is merged into by stow, not a conflict, so it stays put.
+            if [ -e "$target" ] && [ ! -L "$target" ] && ! { [ -d "$item" ] && [ -d "$target" ]; }; then
                 echo -e "${mgn}Backing up $target to $backup_dir${rst}"
                 mkdir -p "$backup_dir"
                 mv "$target" "$backup_dir/"
@@ -162,6 +200,9 @@ safe_stow() {
             fi
         done
     )
+    # Real target directories keep stow from folding this package.
+    precreate_dirs "$package"
+
     # Execute stow from inside the repo_dir to ensure proper pathing
     (cd "$repo_dir" && stow -v -R -t "$HOME" "$package")
 }
@@ -208,16 +249,16 @@ unstow_package() {
     local package=$1
     [ ! -d "$repo_dir/$package" ] && return
 
-    # Only act if at least one live symlink points into this package.
-    local found=""
-    for item in "$repo_dir/$package"/.??* "$repo_dir/$package"/*; do
-        [ ! -e "$item" ] && continue
-        local target="$HOME/$(basename "$item")"
+    # Only act if at least one live symlink points into this package. Nested
+    # packages keep theirs below a real directory, e.g. ~/.local/bin/*.
+    local found="" rel target
+    while IFS= read -r rel; do
+        target="$HOME/$rel"
         if [ -L "$target" ] && [[ "$(readlink -f "$target")" == "$repo_dir/$package"* ]]; then
             found=1
             break
         fi
-    done
+    done < <(cd "$repo_dir/$package" && find . -mindepth 1 -printf '%P\n')
     [ -z "$found" ] && return
 
     echo -e "${ylw}>> Removing previously stowed ${cyn}$package${rst}${ylw} configs...${rst}"

@@ -13,6 +13,14 @@ init_vars() {
     dependencies=("git" "stow")
     optional_apps=("fastfetch")
 
+    # Package selection from the last interactive run, replayed when prompting
+    # is unavailable (git hooks, cron, provisioning scripts).
+    state_file="${XDG_CONFIG_HOME:-$HOME/.config}/dotcfg/selections"
+
+    # Set by detect_tty; empty means every prompt takes its default.
+    interactive=""
+    assume_yes=""
+
     # Set when the user opts to run the bundled zsh environment installer
     # (oh-my-zsh, powerlevel10k, fonts, plugins, .zshrc wiring) after stowing.
     run_zsh_install=""
@@ -24,6 +32,30 @@ init_vars() {
         bld=$(tput bold); itx=$(tput sitm); uln=$(tput smul); rst=$(tput sgr0)
     else
         red=""; grn=""; ylw=""; blu=""; mgn=""; bld=""; itx=""; uln=""; rst=""
+    fi
+}
+
+# Prompts read from /dev/tty, which stays available under `curl | bash` but not
+# under a git hook, cron, or a provisioning script.
+detect_tty() {
+    if [ -n "$assume_yes" ]; then
+        interactive=""
+    elif (exec </dev/tty) 2>/dev/null; then
+        interactive=1
+    else
+        interactive=""
+        echo -e "${ylw}No terminal available; replaying the saved selection.${rst}"
+    fi
+}
+
+# Ask a single-keypress question, or return $2 as the answer when prompting is
+# unavailable.
+ask() {
+    if [ -n "$interactive" ]; then
+        read -p "$1" -n 1 -r < /dev/tty
+        [[ -n "$REPLY" ]] && echo
+    else
+        REPLY="$2"
     fi
 }
 
@@ -104,8 +136,8 @@ manage_repo() {
 repo_root=$(git rev-parse --show-toplevel)
 setup_script="$repo_root/install.sh"
 if [ -f "$setup_script" ]; then
-    echo -e ">> Git merge detected. Running install.sh..."
-    bash "$setup_script"
+    echo -e ">> Git merge detected. Running install.sh --yes..."
+    bash "$setup_script" --yes
 fi
 EOF
         )
@@ -189,8 +221,7 @@ safe_stow() {
                     echo -e "  Current: ${red}${link_dest:-[BROKEN]}${rst}"
                     echo -e "  Correct: ${grn}$new_path${rst}"
 
-                    read -p "  Replace with updated link? (Y/n): " -n 1 -r < /dev/tty
-                    [[ -n "$REPLY" ]] && echo
+                    ask "  Replace with updated link? (Y/n): " "y"
 
                     case "$REPLY" in
                         [Nn]*) echo -e "${mgn}Skipping $item...${rst}\n"; continue ;;
@@ -208,6 +239,49 @@ safe_stow() {
 }
 
 # --- 6. Selection UI ---
+
+# True when $1 is among the packages chosen for this run.
+pkg_selected() {
+    local p
+    for p in "${selected_pkgs[@]}"; do [ "$p" = "$1" ] && return 0; done
+    return 1
+}
+
+save_selections() {
+    mkdir -p "${state_file%/*}"
+    {
+        echo "# Written by install.sh. Replayed when no terminal is available."
+        printf 'saved_pkgs=('; printf '%q ' "${selected_pkgs[@]}"; printf ')\n'
+        printf 'saved_zsh_install=%q\n' "$run_zsh_install"
+    } > "$state_file"
+}
+
+# Restore the previous run's choices, unstowing whatever is no longer selected.
+replay_selections() {
+    if [ ! -f "$state_file" ]; then
+        echo -e "${ylw}No saved selection at ${cyn}$state_file${rst}${ylw}; installing standard packages only.${rst}"
+        return
+    fi
+
+    local saved_pkgs=() saved_zsh_install=""
+    . "$state_file"
+    selected_pkgs=("${saved_pkgs[@]}")
+    run_zsh_install="$saved_zsh_install"
+
+    # CSM supersedes the docker package, matching the interactive path.
+    if pkg_selected "docker" && [ -e "/usr/local/bin/csm" ]; then
+        local kept=() p
+        for p in "${selected_pkgs[@]}"; do [ "$p" != "docker" ] && kept+=("$p"); done
+        selected_pkgs=("${kept[@]}")
+        echo -e "${ylw}>> CSM detected. Skipping legacy docker stow.${rst}"
+    fi
+
+    echo -e "${blu}Replaying saved selection: ${grn}$(IFS=', '; echo "${selected_pkgs[*]}")${rst}"
+    for pkg in "${optional_pkgs[@]}"; do
+        pkg_selected "$pkg" || unstow_package "$pkg"
+    done
+}
+
 select_packages() {
     selected_pkgs=("${standard_pkgs[@]}")
 
@@ -216,10 +290,15 @@ select_packages() {
 
     [[ -z "${optional_pkgs[*]}" ]] && return
 
+    if [ -z "$interactive" ]; then
+        replay_selections
+        return
+    fi
+
     echo -e "\n${blu}${bld}--- Optional package selection ---${rst}\n"
     for pkg in "${optional_pkgs[@]}"; do
         [ ! -d "$repo_dir/$pkg" ] && continue
-        read -p "${ylw}Stow ${cyn}$pkg${rst}${ylw} configs?${rst} (y/N): " -n 1 -r < /dev/tty; echo
+        ask "${ylw}Stow ${cyn}$pkg${rst}${ylw} configs?${rst} (y/N): " "n"
 
         case "$REPLY" in
             [Yy]*)
@@ -232,7 +311,7 @@ select_packages() {
                     # Stowing alone only links ~/.p10k.zsh; this installs the
                     # packages/fonts/plugins and wires ~/.zshrc to source it.
                     if [[ "$pkg" == "zsh" ]]; then
-                        read -p "  ${ylw}└─ Also install the zsh environment (oh-my-zsh, powerlevel10k, fonts, plugins, .zshrc)?${rst} (y/N): " -n 1 -r < /dev/tty; echo
+                        ask "  ${ylw}└─ Also install the zsh environment (oh-my-zsh, powerlevel10k, fonts, plugins, .zshrc)?${rst} (y/N): " "n"
                         [[ "$REPLY" =~ ^[Yy]$ ]] && run_zsh_install=1
                     fi
                 fi
@@ -240,6 +319,8 @@ select_packages() {
             *) unstow_package "$pkg" ;;
         esac
     done
+
+    save_selections
 }
 
 # Remove any previously stowed symlinks for a declined/skipped package.
@@ -271,7 +352,7 @@ execute_deployment() {
     echo -e "${ylw}The following packages will be Stow(ed)${rst}:"
     echo -e " - ${grn}$(IFS=', '; echo "${selected_pkgs[*]}") ${rst}"
 
-    read -p "${mgn}Proceed with deployment? (y/N): ${rst}" -n 1 -r < /dev/tty; echo
+    ask "${mgn}Proceed with deployment? (y/N): ${rst}" "y"
     if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         echo -e "${red}Deployment aborted.${rst}"
         exit 0
@@ -304,9 +385,25 @@ execute_deployment() {
 }
 
 # --- Main Runtime ---
+parse_args() {
+    for arg in "$@"; do
+        case "$arg" in
+            -y|--yes|--non-interactive) assume_yes=1 ;;
+            -h|--help)
+                echo "Usage: install.sh [-y|--yes]"
+                echo "  -y  Skip prompts and replay the selection saved at"
+                echo "      \${XDG_CONFIG_HOME:-\$HOME/.config}/dotcfg/selections"
+                exit 0
+                ;;
+        esac
+    done
+}
+
 main() {
     echo -e "\n${blu}${bld}>>> Launching modular dotfile setup using Stow >>>${rst}\n"
     init_vars
+    parse_args "$@"
+    detect_tty
     check_env
     install_dependencies
     manage_repo

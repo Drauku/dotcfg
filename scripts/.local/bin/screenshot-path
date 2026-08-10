@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env bash
 # screenshot-path — take an interactive screenshot and copy the saved file's
 # PATH (shell-quoted text) to the clipboard, instead of the image data.
 #
@@ -13,12 +13,18 @@
 #   portal returns the saved file's URI; the path is shell-quoted and copied
 #   to the clipboard. Cancelling exits quietly with status 1.
 #
+#   The portal answers with a Response signal on an object path derived from
+#   the calling connection's unique bus name. `gdbus call` and `gdbus monitor`
+#   are separate connections, so the monitor watches every Request signal from
+#   the portal and the reply is matched against the handle the call returns.
+#
 # Works on any desktop with an xdg-desktop-portal Screenshot backend:
 #   GNOME (xdg-desktop-portal-gnome), KDE (xdg-desktop-portal-kde),
 #   wlroots compositors (xdg-desktop-portal-wlr), etc.
 #
 # Dependencies:
-#   - python3 + python-gobject (gi)  [Arch: python-gobject, Debian: python3-gi]
+#   - gdbus [glib2] — the library xdg-desktop-portal itself is built on
+#   - flock [util-linux]
 #   - clipboard tool: wl-copy on Wayland [wl-clipboard], xclip on X11
 #   - optional: notify-send for a confirmation popup [libnotify]
 #
@@ -37,108 +43,90 @@
 #   KDE — System Settings > Keyboard > Shortcuts > Add Command, point it at
 #     this script and assign a key.
 
-import fcntl
-import os
-import shlex
-import subprocess
-import sys
-import tempfile
-import uuid
-from urllib.parse import unquote, urlparse
+set -uo pipefail
 
-import gi
-from gi.repository import Gio, GLib
+PORTAL_DEST="org.freedesktop.portal.Desktop"
+PORTAL_PATH="/org/freedesktop/portal/desktop"
+# Seconds to wait for the capture; the UI stays open until the user acts.
+TIMEOUT="${SCREENSHOT_PATH_TIMEOUT:-300}"
 
-LOCK_NAME = "screenshot-path.lock"
+die() { printf 'screenshot-path: %s\n' "$1" >&2; exit 1; }
 
+# Percent-decode a URI path. Backslashes are escaped first so printf leaves
+# them intact rather than reading them as escape sequences.
+urldecode() {
+    local s=${1//\\/\\\\}
+    printf '%b' "${s//%/\\x}"
+}
 
-def single_instance_lock():
-    # An exclusive lock held for the process lifetime; a second run gets None
-    # while the portal dialog from the first is still open.
-    path = os.path.join(
-        os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir(), LOCK_NAME
-    )
-    handle = open(path, "w")
-    try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        handle.close()
-        return None
-    return handle
+for cmd in gdbus flock; do
+    command -v "$cmd" >/dev/null || die "$cmd not found"
+done
 
+# An exclusive lock held for the process lifetime; a second run exits while the
+# portal dialog from the first is still open.
+lock_file="${XDG_RUNTIME_DIR:-/tmp}/screenshot-path.lock"
+exec 9>"$lock_file" || die "cannot open $lock_file"
+flock -n 9 || exit 0
 
-def copy_to_clipboard(text: str) -> None:
-    # Wayland first, X11 fallback.
-    if os.environ.get("WAYLAND_DISPLAY"):
-        subprocess.run(["wl-copy", text], check=True)
-    else:
-        subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+monitor_log=$(mktemp -t screenshot-path.XXXXXX) || die "cannot create temp file"
+monitor_pid=""
+cleanup() {
+    [ -n "$monitor_pid" ] && kill "$monitor_pid" 2>/dev/null
+    rm -f "$monitor_log"
+}
+trap cleanup EXIT
 
+# The portal requires a handle_token unique per request; it forms the object
+# path the Response signal arrives on.
+if [ -r /proc/sys/kernel/random/uuid ]; then
+    token="screenshotpath$(tr -d - < /proc/sys/kernel/random/uuid)"
+else
+    token="screenshotpath$$$RANDOM"
+fi
 
-def main():
-    lock = single_instance_lock()
-    if lock is None:
-        sys.exit(0)  # a capture is already in progress
+# 9>&- keeps the lock fd out of the monitor and its children, so a stray
+# descendant cannot hold the lock after this run exits.
+gdbus monitor --session --dest "$PORTAL_DEST" > "$monitor_log" 2>/dev/null 9>&- &
+monitor_pid=$!
 
-    # The portal requires a handle_token unique per request; it forms the object
-    # path the Response signal arrives on.
-    token = f"screenshotpath{uuid.uuid4().hex}"
+# Signals emitted before the monitor connects are lost, so wait for its banner.
+for _ in $(seq 1 100); do
+    grep -q "Monitoring signals" "$monitor_log" && break
+    sleep 0.05
+done
+kill -0 "$monitor_pid" 2>/dev/null || die "gdbus monitor exited"
 
-    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-    sender = bus.get_unique_name()[1:].replace(".", "_")
-    request_path = f"/org/freedesktop/portal/desktop/request/{sender}/{token}"
-    loop = GLib.MainLoop()
-    result = {}
+handle=$(gdbus call --session --dest "$PORTAL_DEST" --object-path "$PORTAL_PATH" \
+    --method org.freedesktop.portal.Screenshot.Screenshot \
+    "" "{'handle_token': <'$token'>, 'interactive': <true>}" 2>&1) \
+    || die "portal call failed: $handle"
 
-    def on_response(_bus, _sender, _path, _iface, _signal, params):
-        code, results = params.unpack()
-        if code == 0:
-            result["uri"] = results.get("uri")
-        loop.quit()
+handle=$(printf '%s' "$handle" | sed -n "s/.*objectpath '\([^']*\)'.*/\1/p")
+[ -n "$handle" ] || die "portal returned no request handle"
 
-    subscription = bus.signal_subscribe(
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Request",
-        "Response",
-        request_path,
-        None,
-        Gio.DBusSignalFlags.NONE,
-        on_response,
-    )
+response=""
+deadline=$((SECONDS + TIMEOUT))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    response=$(grep -F "$handle: org.freedesktop.portal.Request.Response" "$monitor_log" | head -1)
+    [ -n "$response" ] && break
+    kill -0 "$monitor_pid" 2>/dev/null || die "gdbus monitor exited"
+    sleep 0.1
+done
+[ -n "$response" ] || die "timed out after ${TIMEOUT}s waiting for the portal"
 
-    try:
-        bus.call_sync(
-            "org.freedesktop.portal.Desktop",
-            "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.Screenshot",
-            "Screenshot",
-            GLib.Variant(
-                "(sa{sv})",
-                ("", {"handle_token": GLib.Variant("s", token), "interactive": GLib.Variant("b", True)}),
-            ),
-            GLib.VariantType("(o)"),
-            Gio.DBusCallFlags.NONE,
-            -1,
-            None,
-        )
-        loop.run()
-    except GLib.Error as err:
-        print(f"screenshot-path: portal call failed: {err.message}", file=sys.stderr)
-        sys.exit(1)
-    finally:
-        bus.signal_unsubscribe(subscription)
+code=$(printf '%s' "$response" | sed -n 's/.*(uint32 \([0-9]*\).*/\1/p')
+[ "$code" = "0" ] || exit 1  # cancelled or failed
 
-    uri = result.get("uri")
-    if not uri:
-        sys.exit(1)  # cancelled or failed
+uri=$(printf '%s' "$response" | sed -n "s/.*'uri': <'\([^']*\)'>.*/\1/p")
+[ -n "$uri" ] || die "portal returned no uri"
 
-    path = unquote(urlparse(uri).path)
-    copy_to_clipboard(shlex.quote(path))
-    subprocess.run(
-        ["notify-send", "-a", "Screenshot", "Path copied", path],
-        check=False,
-    )
+path=$(urldecode "${uri#file://}")
+quoted=$(printf '%q' "$path")
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    wl-copy "$quoted" || die "wl-copy failed"
+else
+    printf '%s' "$quoted" | xclip -selection clipboard || die "xclip failed"
+fi
 
-
-if __name__ == "__main__":
-    main()
+notify-send -a Screenshot "Path copied" "$path" 2>/dev/null || true

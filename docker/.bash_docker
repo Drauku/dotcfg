@@ -94,6 +94,11 @@ if command -v csm >/dev/null 2>&1; then
     if alias cds >/dev/null 2>&1; then unalias cds; fi
     # (( $+aliases[cds] )) && unalias cds # zfs compatible only
     eval "$(csm --aliases)"
+    # Short form; every managed item is a compose stack. An sm symlink in
+    # PATH takes precedence, since a function would shadow it.
+    if ! command -v sm >/dev/null 2>&1; then
+        sm(){ csm "$@"; }
+    fi
     return
 else
 
@@ -123,7 +128,7 @@ else
 
         mkdir -p "$target_backup_dir"
         log INFO "Creating backup: $backup_file"
-        tar -czf "$backup_file" -C "$csm_stacks" "$stack_name"
+        tar -czf "$backup_file" -C "$stacks_dir" "$stack_name"
         log DONE "Backup complete."
     }
     ctbu(){ ct_stack_backup "$@"; }

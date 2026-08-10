@@ -36,6 +36,10 @@ if [[ -z "$STARSHIP_SHELL$POSH_THEME$P9K_TTY" ]]; then
     fi
 fi
 
+# Added by LM Studio CLI tool (lms)
+export PATH="$PATH:$HOME/.lmstudio/bin:$HOME/.local/bin"
+
+
 # PATH Deduplication Snippet
 if [ -n "$PATH" ]; then
     export PATH=$(echo -n "$PATH" | awk -v RS=: -v ORS=: '!x[$0]++' | sed 's/:$//')

@@ -219,3 +219,11 @@ tmx() {
     command tmux -L "$socket" -f "$conf" new-session -s "$session" -c "$dir"
   fi
 }
+
+hermes() {
+    if [[ "$1" == "cli" ]]; then
+        command hermes
+    else
+        HERMES_GATEWAY_URL='ws://hermes.home.lan:9119' command hermes desktop
+    fi
+}

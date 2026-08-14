@@ -1,32 +1,44 @@
 #!/bin/bash
 
-set_alias() { if command -v $1 >/dev/null 2>&1; then alias "$2"="$1"; fi; }
+function set_alias() { if command -v $1 >/dev/null 2>&1; then alias "$2"="$1"; fi; }
 set_alias nala apt
 set_alias bat cat
-set_alias exa ls
 
 
-# --- Settings ---
-export ls_opts="--group-directories-first --time-style=long-iso --color=auto"
+# --- ls Aliases (works in bash & zsh) ---
+# eza/exa use DIFFERENT single-letter flags than coreutils ls
+# (e.g. eza -s == --sort, NOT "size"; eza -h == header, sizes are human by
+# default). So we pick the binary once and build each alias with flags that
+# are valid for THAT binary, instead of chaining coreutils letters through an
+# `ls` alias (which is what broke `l`/`la`/`ll` under eza).
+_ls_base="--group-directories-first --color=auto --time-style=long-iso"
+_ls=""   # start empty so a stray inherited $_ls can't select the wrong branch
 
-# --- Modern ls Aliases ---
-# Use the 'ls' alias inside the others to stay DRY
-# In your common/.bash_aliases
-if command -v exa >/dev/null 2>&1; then
-    # alias ls="exa --group-directories-first --time-style=long-iso"
-    alias ls="exa ${ls_opts}"
-    alias l="ls -lbhHigUmuSa"
-    alias ll="ls -lbh"
-else
-    alias ls="/bin/ls -F ${ls_opts}"
+if command -v eza >/dev/null 2>&1; then
+    _ls="eza"
+elif command -v exa >/dev/null 2>&1; then
+    _ls="exa"
 fi
-alias dir='ls'
-alias l="ls -lAsh ${ls_opts}"
-alias ll="ls -ahl ${ls_opts}"
-alias lh="ls -hl ${ls_opts}"
-alias la="ls -lash ${ls_opts}"
 
-alias l="ls -lAsh ${ls_opts}"
+if [ -n "$_ls" ]; then
+    alias ls="$_ls $_ls_base"
+    alias ll="$_ls -lh $_ls_base"    # long + header
+    alias lh="$_ls -lh $_ls_base"    # long + header
+    alias la="$_ls -lah $_ls_base"   # long + all (hidden) + header
+    alias l="$_ls -lah $_ls_base"    # long + all + header
+    alias lt="$_ls -T $_ls_base"     # tree
+else
+    # `command ls` in the derived aliases avoids recursive ls-alias expansion,
+    # which would otherwise leak -F and double $_ls_base into ll/la/etc.
+    alias ls="command ls -F $_ls_base"
+    alias ll="command ls -lh $_ls_base"
+    alias lh="command ls -lh $_ls_base"
+    alias la="command ls -lAh $_ls_base"
+    alias l="command ls -lAh $_ls_base"
+    alias lt="command ls -R $_ls_base"
+fi
+alias dir="ls"
+unset _ls _ls_base
 
 # --- Navigation ---
 # Using an array for "up" navigation is overkill, but keeping them concise is key
@@ -44,8 +56,12 @@ alias lan='ip -c -br a'
 alias cls='clear'
 
 # --- Functions ---
+# Aliases outrank functions in zsh, so drop any same-named alias a distro may
+# define (e.g. CachyOS aliases `md` to `mkdir -p`) before we define ours below.
+unalias md edit toclip cb pb genhash genkey genssh ssh-add-all tmx hermes 2>/dev/null
+
 # Creates directory and enters it
-md() {
+function md() {
     if [ -n "$1" ]; then
         mkdir -p "$1" && cd "$1"
     else
@@ -54,8 +70,7 @@ md() {
 }
 
 # Priority-based editor (The first one found becomes 'edit')
-unalias edit 2>/dev/null
-edit() {
+function edit() {
     if [ -n "$EDITOR" ] && command -v "$EDITOR" >/dev/null 2>&1; then
         command "$EDITOR" "$@"
         return
@@ -74,7 +89,7 @@ alias e='edit'
 
 # Copies stdin to the best available clipboard helper.
 # If nothing is available, it prints stdin to stdout unchanged.
-toclip() {
+function toclip() {
     if [ -t 0 ]; then
         if command -v wl-paste >/dev/null 2>&1; then
             wl-paste
@@ -114,8 +129,8 @@ toclip() {
         cat
     fi
 }
-cb() { toclip; } # Copy to clipboard
-pb() { # Paste from clipboard
+function cb() { toclip; } # Copy to clipboard
+function pb() { # Paste from clipboard
     if command -v wl-paste >/dev/null 2>&1; then
         wl-paste
     elif command -v xclip >/dev/null 2>&1; then
@@ -130,7 +145,7 @@ pb() { # Paste from clipboard
     fi
 }
 # Creates a hashed sha256 key
-genhash() {
+function genhash() {
     if [ -z "$1" ]; then
         local input
         read -rsp "Passphrase: " input
@@ -141,7 +156,7 @@ genhash() {
     fi
 }
 # Creates a random hex or base64 string
-genkey() {
+function genkey() {
     local mode="${1:-hex}"
     local bytes="${2:-32}"
 
@@ -157,7 +172,7 @@ genkey() {
     openssl rand "-$mode" "$bytes" | toclip
 }
 # Creates SSH key with unique name
-genssh() {
+function genssh() {
     if [ -z "$1" ]; then
         echo "Usage: genssh <name> [comment]" >&2
         return 1
@@ -180,7 +195,7 @@ genssh() {
 }
 
 # Function to add all keys in ~/.ssh (ignoring public keys and config)
-ssh-add-all() {
+function ssh-add-all() {
     find ~/.ssh -type f -not -name "*.pub" -not -name "config" -not -name "known_hosts" -exec ssh-add {} +
 }
 
@@ -188,7 +203,7 @@ ssh-add-all() {
 alias gitlog='git log --graph --pretty=format:"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset" --abbrev-commit'
 
 alias tmux='command tmux'
-tmx() {
+function tmx() {
   if ! command -v tmux >/dev/null 2>&1; then
     echo "tmux is not installed or not in PATH" >&2
     return 127
@@ -220,7 +235,7 @@ tmx() {
   fi
 }
 
-hermes() {
+function hermes() {
     if [[ "$1" == "cli" ]]; then
         command hermes
     else

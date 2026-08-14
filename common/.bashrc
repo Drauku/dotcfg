@@ -18,6 +18,21 @@ if [ -d "$HOME/.dotfiles" ]; then
     done
 fi
 
+# --- PATH setup (must precede the source loop below, so tools installed under
+# ~/.local/bin or ~/.cargo/bin — e.g. a cargo-installed eza — are on PATH when
+# .bash_aliases runs its `command -v` checks) ---
+# Added by LM Studio CLI tool (lms)
+export PATH="$PATH:$HOME/.lmstudio/bin:$HOME/.local/bin"
+# Added by Antigravity CLI installer
+export PATH="$HOME/.local/bin:$PATH"
+# Rust/Cargo environment (prepends ~/.cargo/bin to PATH)
+[ -r "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
+# PATH Deduplication Snippet
+if [ -n "$PATH" ]; then
+    export PATH=$(echo -n "$PATH" | awk -v RS=: -v ORS=: '!x[$0]++' | sed 's/:$//')
+fi
+
 # Source all identified conf
 for conf in "${configs[@]}"; do
     src="$HOME/.bash_$conf"; [ -f "$src" ] && . "$src"
@@ -34,15 +49,6 @@ if [[ -z "$STARSHIP_SHELL$POSH_THEME$P9K_TTY" ]]; then
         # Fallback for non-color terminals
         PS1='${debian_chroot:+($debian_chroot)}\u@\h: \w\$ '
     fi
-fi
-
-# Added by LM Studio CLI tool (lms)
-export PATH="$PATH:$HOME/.lmstudio/bin:$HOME/.local/bin"
-
-
-# PATH Deduplication Snippet
-if [ -n "$PATH" ]; then
-    export PATH=$(echo -n "$PATH" | awk -v RS=: -v ORS=: '!x[$0]++' | sed 's/:$//')
 fi
 
 # SSH Agent - Interactive Shell Only
@@ -64,3 +70,5 @@ unset configs conf dir src u_clr
 echo -ne "${rst}"
 
 [[ $(which fastfetch) ]] && fastfetch
+
+function ts(){ tailscale "$@"; }

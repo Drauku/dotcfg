@@ -7,6 +7,12 @@ src="$HOME/.bashrc"; [ -f "$src" ] && . "$src"
 export EDITOR="micro"
 export VISUAL="codium"
 
+# Added by Antigravity CLI installer
+export PATH="$HOME/.local/bin:$PATH"
+
+# Rust/Cargo environment (prepends ~/.cargo/bin to PATH)
+[ -r "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
 # PATH Deduplication Snippet
 if [ -n "$PATH" ]; then
     export PATH=$(echo -n "$PATH" | awk -v RS=: -v ORS=: '!x[$0]++' | sed 's/:$//')

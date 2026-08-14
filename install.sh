@@ -9,7 +9,7 @@ init_vars() {
     backup_dir="$HOME/.dotfiles_backup/backup_$(date +%Y%m%d_%H%M%S)"
 
     standard_pkgs=("common")
-    optional_pkgs=("zsh" "scripts" "docker" "server" "gaming")
+    optional_pkgs=("zsh" "fish" "scripts" "docker" "server" "gaming")
     dependencies=("git" "stow")
     optional_apps=("fastfetch")
 
@@ -346,7 +346,44 @@ unstow_package() {
     (cd "$repo_dir" && stow -v -D -t "$HOME" "$package")
 }
 
-# --- 7. Deployment Execution ---
+# --- 7. Shell alias wiring ---
+# bash and zsh are POSIX-compatible and share ~/.bash_aliases; fish is not, so
+# it gets its own native ~/.config/fish/aliases.fish. Each shell's rc only needs
+# a one-line `source` hook. These hooks must run AFTER any distro config (e.g.
+# CachyOS defines its own `ls`), so we append at EOF. Idempotent: a matching
+# non-comment line already present is left untouched.
+_ensure_line() {
+    local file=$1 line=$2
+    [ -f "$file" ] || return 0
+    # Exact whole-line match, so an unrelated line that merely contains the same
+    # path cannot cause a false "already wired" skip.
+    grep -qxF -- "$line" "$file" && return 0
+    # Guarantee a trailing newline before appending.
+    [ -s "$file" ] && [ -n "$(tail -c1 "$file")" ] && printf '\n' >> "$file"
+    printf '%s\n' "$line" >> "$file"
+    echo -e "  ${grn}Wired${rst} ${cyn}$file${rst}"
+}
+
+# zsh reuses the shared POSIX aliases from the always-stowed common package.
+# The rc file is created if absent so the hook lands even on a fresh HOME.
+configure_zsh_aliases() {
+    pkg_selected zsh || return 0
+    [ -f "$HOME/.zshrc" ] || touch "$HOME/.zshrc"
+    _ensure_line "$HOME/.zshrc" \
+        '[ -f "$HOME/.bash_aliases" ] && source "$HOME/.bash_aliases"'
+}
+
+# fish sources its own native aliases file (symlinked by the fish package).
+configure_fish_aliases() {
+    pkg_selected fish || return 0
+    local fishcfg="$HOME/.config/fish/config.fish"
+    mkdir -p "${fishcfg%/*}"
+    [ -f "$fishcfg" ] || touch "$fishcfg"
+    _ensure_line "$fishcfg" \
+        'test -f ~/.config/fish/aliases.fish; and source ~/.config/fish/aliases.fish'
+}
+
+# --- 8. Deployment Execution ---
 execute_deployment() {
     echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
     echo -e "${ylw}The following packages will be Stow(ed)${rst}:"
@@ -374,6 +411,10 @@ execute_deployment() {
             exit 1
         fi
     fi
+
+    # Wire each shell's rc to load its aliases (only for selected shells).
+    configure_zsh_aliases
+    configure_fish_aliases
 
     [ -d "$backup_dir" ] && echo -e "Backups saved to: ${mgn}$backup_dir${rst}"
     if [[ -n "$run_zsh_install" ]]; then

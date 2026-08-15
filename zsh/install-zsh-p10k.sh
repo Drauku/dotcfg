@@ -42,20 +42,48 @@ detect_pkg_manager() {
 
 ## ─── Package installation ───────────────────────────────────────────────────
 
+# Echo the subset of "$@" that isn't installed yet, one per line. `--needed` and
+# `apt install` are both no-ops for already-present packages, but only *after*
+# sudo has been acquired — so re-running this installer prompted for a password
+# just to do nothing. Checking first lets the caller skip the privileged call.
+missing_packages() {
+    local pkg
+    for pkg in "$@"; do
+        case "$PKG_MANAGER" in
+            pacman)
+                pacman -Q "$pkg" >/dev/null 2>&1 || printf '%s\n' "$pkg"
+                ;;
+            apt)
+                # dpkg -s succeeds for removed-but-not-purged packages, so match
+                # the full status rather than just the exit code.
+                dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null \
+                    | grep -q '^install ok installed$' || printf '%s\n' "$pkg"
+                ;;
+        esac
+    done
+}
+
 install_packages() {
+    local missing=()
     printf "\n Installing packages...\n"
     case "$PKG_MANAGER" in
         pacman)
             # All packages available in Arch repos or CachyOS repos.
             # On stock Arch, oh-my-zsh-git is in the AUR — requires yay or paru.
-            $PKG_INSTALL zsh git curl fontconfig \
+            mapfile -t missing < <(missing_packages zsh git curl fontconfig \
                 oh-my-zsh-git zsh-theme-powerlevel10k ttf-meslo-nerd \
-                zsh-autosuggestions zsh-syntax-highlighting zsh-history-substring-search
+                zsh-autosuggestions zsh-syntax-highlighting zsh-history-substring-search)
+            [ ${#missing[@]} -eq 0 ] && { printf "  All packages already installed, skipping.\n"; return 0; }
+            printf "  Missing: %s\n" "${missing[*]}"
+            $PKG_INSTALL "${missing[@]}"
             ;;
         apt)
+            mapfile -t missing < <(missing_packages curl fontconfig git zsh)
+            [ ${#missing[@]} -eq 0 ] && { printf "  All packages already installed, skipping.\n"; return 0; }
+            printf "  Missing: %s\n" "${missing[*]}"
             # Only refresh the index — do NOT `apt upgrade` the whole system;
             # a prompt installer should not trigger a mass system upgrade.
-            sudo apt update -y && $PKG_INSTALL curl fontconfig git zsh
+            sudo apt update -y && $PKG_INSTALL "${missing[@]}"
             ;;
     esac
 }
@@ -271,9 +299,16 @@ install_p10k_config() {
 ## ─── Set default shell ──────────────────────────────────────────────────────
 
 set_default_shell() {
-    local zsh_path
-    zsh_path="$(command -v zsh)"
-    if [ "$SHELL" = "$zsh_path" ]; then
+    local zsh_path current
+    zsh_path="$(command -v zsh)" || return 0
+    # Compare against the passwd entry, not $SHELL: $SHELL is inherited from the
+    # environment and can spell the same binary differently than `command -v`
+    # (/bin/zsh vs /usr/bin/zsh on merged-/usr distros), which made this guard
+    # never match — so chsh ran, and prompted for a password, on every re-run.
+    # readlink -f collapses that difference.
+    current="$(getent passwd "$(id -un)" | cut -d: -f7)"
+    if [ "$(readlink -f "$current")" = "$(readlink -f "$zsh_path")" ]; then
+        printf "\n zsh is already the default shell, skipping.\n"
         return 0
     fi
     printf "\n Set zsh as default shell? [Y/n] "

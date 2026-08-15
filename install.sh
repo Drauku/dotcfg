@@ -21,6 +21,10 @@ init_vars() {
     interactive=""
     assume_yes=""
 
+    # Packages declined this run that still have live symlinks. Filled during
+    # selection, acted on only after the deployment plan is confirmed.
+    deselected_pkgs=()
+
     # Set when the user opts to run the bundled zsh environment installer
     # (oh-my-zsh, powerlevel10k, fonts, plugins, .zshrc wiring) after stowing.
     run_zsh_install=""
@@ -278,7 +282,7 @@ replay_selections() {
 
     echo -e "${blu}Replaying saved selection: ${grn}$(IFS=', '; echo "${selected_pkgs[*]}")${rst}"
     for pkg in "${optional_pkgs[@]}"; do
-        pkg_selected "$pkg" || unstow_package "$pkg"
+        pkg_selected "$pkg" || queue_unstow "$pkg"
     done
 }
 
@@ -304,7 +308,7 @@ select_packages() {
             [Yy]*)
                 if [[ "$pkg" == "docker" && -e "/usr/local/bin/csm" ]]; then
                     echo -e "${ylw}>> CSM detected. Skipping legacy docker stow.${rst}"
-                    unstow_package "$pkg"
+                    queue_unstow "$pkg"
                 else
                     selected_pkgs+=("$pkg")
                     # Follow-up: offer to provision the full zsh environment.
@@ -316,32 +320,42 @@ select_packages() {
                     fi
                 fi
                 ;;
-            *) unstow_package "$pkg" ;;
+            *) queue_unstow "$pkg" ;;
         esac
     done
-
-    save_selections
 }
 
-# Remove any previously stowed symlinks for a declined/skipped package.
+# True when at least one live symlink under $HOME points into this package.
+# Nested packages keep theirs below a real directory, e.g. ~/.local/bin/*.
+package_is_stowed() {
+    local package=$1 rel target
+    [ ! -d "$repo_dir/$package" ] && return 1
+
+    while IFS= read -r rel; do
+        target="$HOME/$rel"
+        if [ -L "$target" ] && [[ "$(readlink -f "$target")" == "$repo_dir/$package"* ]]; then
+            return 0
+        fi
+    done < <(cd "$repo_dir/$package" && find . -mindepth 1 -printf '%P\n')
+    return 1
+}
+
+# Mark a declined/skipped package for removal. Read-only: nothing is unlinked
+# until the deployment plan is confirmed, so aborting at that prompt leaves the
+# system exactly as it was. Packages with no live symlinks are never queued, so
+# they stay out of the plan.
+queue_unstow() {
+    package_is_stowed "$1" || return 0
+    local p
+    for p in "${deselected_pkgs[@]}"; do [ "$p" = "$1" ] && return 0; done
+    deselected_pkgs+=("$1")
+}
+
+# Remove the previously stowed symlinks for a queued package.
 # 'stow -D' only unlinks targets that point back into this package, so it is
 # safe to run even when the package was never stowed.
 unstow_package() {
     local package=$1
-    [ ! -d "$repo_dir/$package" ] && return
-
-    # Only act if at least one live symlink points into this package. Nested
-    # packages keep theirs below a real directory, e.g. ~/.local/bin/*.
-    local found="" rel target
-    while IFS= read -r rel; do
-        target="$HOME/$rel"
-        if [ -L "$target" ] && [[ "$(readlink -f "$target")" == "$repo_dir/$package"* ]]; then
-            found=1
-            break
-        fi
-    done < <(cd "$repo_dir/$package" && find . -mindepth 1 -printf '%P\n')
-    [ -z "$found" ] && return
-
     echo -e "${ylw}>> Removing previously stowed ${cyn}$package${rst}${ylw} configs...${rst}"
     (cd "$repo_dir" && stow -v -D -t "$HOME" "$package")
 }
@@ -388,12 +402,25 @@ execute_deployment() {
     echo -e "\n${blu}${bld}--- Deployment Plan ---${rst}"
     echo -e "${ylw}The following packages will be Stow(ed)${rst}:"
     echo -e " - ${grn}$(IFS=', '; echo "${selected_pkgs[*]}") ${rst}"
+    if [ ${#deselected_pkgs[@]} -gt 0 ]; then
+        echo -e "${ylw}The following previously stowed packages will be removed${rst}:"
+        echo -e " - ${red}$(IFS=', '; echo "${deselected_pkgs[*]}") ${rst}"
+    fi
 
     ask "${mgn}Proceed with deployment? (y/N): ${rst}" "y"
     if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         echo -e "${red}Deployment aborted.${rst}"
         exit 0
     fi
+
+    # Persist the confirmed choices for later non-interactive replays. Only the
+    # interactive path gathers new answers; a replay run already read this file
+    # and rewriting it would just echo back what it loaded.
+    [ -n "$interactive" ] && save_selections
+
+    for pkg in "${deselected_pkgs[@]}"; do
+        unstow_package "$pkg"
+    done
 
     for pkg in "${selected_pkgs[@]}"; do
         safe_stow "$pkg"

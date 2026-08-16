@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ## Install zsh, oh-my-zsh, powerlevel10k, MesloLGS Nerd Fonts, and zsh plugins.
-## Supports Arch/CachyOS (pacman) and Debian/Ubuntu (apt).
+## Supports Arch/CachyOS (pacman), Debian/Ubuntu (apt), and Fedora/Nobara (dnf).
 ##
 ## Bundled with the dotcfg 'zsh' stow package. The custom prompt config
 ## (.p10k.zsh) lives alongside this script and is normally symlinked into
@@ -30,6 +30,10 @@ detect_pkg_manager() {
             PKG_INSTALL="sudo pacman -S --needed --noconfirm"
         fi
         printf "\n Detected: Arch/CachyOS (pacman)\n"
+    elif command -v dnf >/dev/null 2>&1; then
+        PKG_MANAGER="dnf"
+        PKG_INSTALL="sudo dnf install -y"
+        printf "\n Detected: Fedora/Nobara (dnf)\n"
     elif command -v apt >/dev/null 2>&1; then
         PKG_MANAGER="apt"
         PKG_INSTALL="sudo apt install -y"
@@ -59,6 +63,9 @@ missing_packages() {
                 dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null \
                     | grep -q '^install ok installed$' || printf '%s\n' "$pkg"
                 ;;
+            dnf)
+                rpm -q "$pkg" >/dev/null 2>&1 || printf '%s\n' "$pkg"
+                ;;
         esac
     done
 }
@@ -85,13 +92,21 @@ install_packages() {
             # a prompt installer should not trigger a mass system upgrade.
             sudo apt update -y && $PKG_INSTALL "${missing[@]}"
             ;;
+        dnf)
+            # Fedora repos carry no oh-my-zsh, powerlevel10k, or
+            # zsh-history-substring-search; those are cloned from source below.
+            mapfile -t missing < <(missing_packages curl fontconfig git zsh)
+            [ ${#missing[@]} -eq 0 ] && { printf "  All packages already installed, skipping.\n"; return 0; }
+            printf "  Missing: %s\n" "${missing[*]}"
+            $PKG_INSTALL "${missing[@]}"
+            ;;
     esac
 }
 
-## ─── Fonts (Debian/Ubuntu only — Arch uses ttf-meslo-nerd package) ──────────
+## ─── Fonts (apt/dnf — Arch uses the ttf-meslo-nerd package) ─────────────────
 
 install_fonts() {
-    [ "$PKG_MANAGER" = "apt" ] || return 0
+    [ "$PKG_MANAGER" = "pacman" ] && return 0
     printf "\n Installing MesloLGS Nerd Fonts...\n"
     local font_dir="${HOME}/.local/share/fonts"
     mkdir -p "$font_dir"
@@ -104,10 +119,10 @@ install_fonts() {
     fc-cache -f -v
 }
 
-## ─── oh-my-zsh (Debian/Ubuntu only — Arch uses system package) ──────────────
+## ─── oh-my-zsh (apt/dnf — Arch uses a system package) ───────────────────────
 
 install_omz() {
-    [ "$PKG_MANAGER" = "apt" ] || return 0
+    [ "$PKG_MANAGER" = "pacman" ] && return 0
     if [ -d "${HOME}/.oh-my-zsh" ]; then
         printf "\n oh-my-zsh already installed, skipping.\n"
         return 0
@@ -121,10 +136,10 @@ install_omz() {
     RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
-## ─── Powerlevel10k theme (Debian/Ubuntu only) ───────────────────────────────
+## ─── Powerlevel10k theme (apt/dnf) ──────────────────────────────────────────
 
 install_p10k_theme() {
-    [ "$PKG_MANAGER" = "apt" ] || return 0
+    [ "$PKG_MANAGER" = "pacman" ] && return 0
     local theme_dir="${ZSH_CUSTOM:-${HOME}/.oh-my-zsh/custom}/themes/powerlevel10k"
     if [ -d "$theme_dir" ]; then
         printf "\n Powerlevel10k already installed, skipping.\n"
@@ -134,10 +149,10 @@ install_p10k_theme() {
     git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$theme_dir"
 }
 
-## ─── Plugins (Debian/Ubuntu only — Arch uses system packages) ───────────────
+## ─── Plugins (apt/dnf — Arch uses system packages) ──────────────────────────
 
 install_plugins() {
-    [ "$PKG_MANAGER" = "apt" ] || return 0
+    [ "$PKG_MANAGER" = "pacman" ] && return 0
     printf "\n Installing zsh plugins...\n"
     local plugin_dir="${ZSH_CUSTOM:-${HOME}/.oh-my-zsh/custom}/plugins"
     for entry in \
@@ -217,7 +232,7 @@ configure_zshrc() {
                 done
             fi
             ;;
-        apt)
+        apt|dnf)
             # On a box that already had a ~/.zshrc, oh-my-zsh ran with
             # KEEP_ZSHRC=yes and did NOT write its template, so we inject the OMZ
             # bootstrap ourselves. On a truly fresh box OMZ *does* write its
